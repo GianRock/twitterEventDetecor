@@ -3,13 +3,13 @@ package com.rock.twitterEventDetector.nlp
 import java.net.URLEncoder
 import java.util
 
+import com.rock.twitterEventDetector.db.mongodb.DbpediaAnnotationCollection
 import com.rock.twitterEventDetector.model.AnnotationType
 import com.rock.twitterEventDetector.model.AnnotationType.AnnotationType
 import com.rock.twitterEventDetector.model.AnnotationType.AnnotationType
 import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.Tweet
-import com.rock.twitterEventDetector.mongoSpark.DbpediaAnnotationCollection
 import com.rock.twitterEventDetector.nlp.annotator.RestClient
  import edu.stanford.nlp.ling.{HasWord, TaggedWord}
 

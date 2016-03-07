@@ -1,15 +1,17 @@
 
 
 
+
 package com.rock.twitterEventDetector.dbscanTweet
 
 import java.util.Date
 
+import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
+import com.rock.twitterEventDetector.db.mongodb.{DbpediaAnnotationCollection, TweetCollection}
 import com.rock.twitterEventDetector.dbscanTweet.Distances._
 import com.rock.twitterEventDetector.lsh.{LSH, LSHModel}
 import com.rock.twitterEventDetector.model.Model._
 import com.rock.twitterEventDetector.model.Tweets.{VectorTweet, AnnotatedTweet, AnnotatedTweetWithDbpediaResources, Tweet}
-import com.rock.twitterEventDetector.mongoSpark.{DbpediaAnnotationCollection, DbpediaCollection, SparkMongoIntegration, TweetCollection}
 import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
@@ -36,23 +38,6 @@ object TweetClusteringCosineOnly {
 
 
 
-  def realClustering(sc: SparkContext,
-                     data: RDD[(Long, Tweet)],
-                     lshModel: LSHModel,
-                     minPts: Int, eps: Double): Unit ={
-
-
-
-
-    data.collect()
-      .map{
-        case(ida,tweet)=>{
-          lshModel.getCandidates(ida)
-
-        }
-      }
-
-  }
 
   /**
     * Generate tf-idf vectors from the a rdd containing tweets
@@ -237,9 +222,10 @@ object TweetClusteringCosineOnly {
     * @param minPts
     * @param eps
     */
-  def clusteringTweets(sc: SparkContext,
-                       lshModel: LSHModel,
-                       minPts: Int, eps: Double):VertexRDD[VertexId]  = {
+  def clusteringTweets( sc: SparkContext,
+                        lshModel: LSHModel,
+                        minPts: Int,
+                        eps: Double):VertexRDD[VertexId]  = {
 
 
 
@@ -382,6 +368,8 @@ object TweetClusteringCosineOnly {
  }
 
 
+
+
   def main(args: Array[String]) {
 
 
@@ -405,7 +393,7 @@ object TweetClusteringCosineOnly {
 
     val maxDate = new Date(minDAte.getTime + 1000000)
     //val tweetsfirst72H: RDD[(VertexId, Tweet)] = SparkMongoIntegration.getTweetsAsRDDInTimeInterval(sc, minDAte,maxDate)
-   val relevantTweets=SparkMongoIntegration.getRelevantTweetsAsTupleRDD(sc,None)
+   val relevantTweets=SparkMongoIntegration.getTweetsAsTupleRDD(sc,None,"onlyRelevantTweets")
 
     //  val tentweets=tweetsfirst72H.take(10);
     relevantTweets.cache()
@@ -432,7 +420,7 @@ object TweetClusteringCosineOnly {
     // Save and load model
     clusters.save(sc, "target/kmeansModel")
 
-/*
+
 
       val lsh = new LSH(tfidfVectors, sizeDictionary, numHashFunc  =30, numHashTables = 10)
       val lshModel = lsh.run()
@@ -441,7 +429,7 @@ object TweetClusteringCosineOnly {
     //val lshModel: LSHModel= LSHModel.load(sc, "target/relevantTweetsLSH")
 
     println("finished loading lsh model")
-    val connectedComponents: VertexRDD[VertexId] =clusteringTweets(sc,relevantTweets,lshModel,50,0.35)
+    val connectedComponents: VertexRDD[VertexId] =clusteringTweets(sc,lshModel,50,0.35)
     val clusteredData: RDD[(VertexId, VertexId)] =
       relevantTweets.leftOuterJoin(connectedComponents)
         .map{
@@ -449,8 +437,9 @@ object TweetClusteringCosineOnly {
           case(objectId,(instance,None))=>(NOISE,objectId)
         }
     //clusteredData.saveAsTextFile("target/relevantTweetsClustered")
-    clusteredData.groupByKey().map(x=>(x._1,x._2.size)).collect().foreach(println)*/
+    clusteredData.groupByKey().map(x=>(x._1,x._2.size)).collect().foreach(println)
 
   }
 
 }
+

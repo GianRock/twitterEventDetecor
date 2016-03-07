@@ -1,7 +1,7 @@
 package com.rock.twitterEventDetector.nlp
 
+import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
 import com.rock.twitterEventDetector.dbscanTweet.Main._
-import com.rock.twitterEventDetector.mongoSpark.SparkMongoIntegration
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
 import org.apache.spark._
 import org.apache.spark.mllib.clustering.KMeans

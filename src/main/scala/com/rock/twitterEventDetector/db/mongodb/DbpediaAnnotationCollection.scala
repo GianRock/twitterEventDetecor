@@ -1,28 +1,21 @@
-package com.rock.twitterEventDetector.mongoSpark
+package com.rock.twitterEventDetector.db.mongodb
 
-import java.util
-import java.util.Date
-
-import com.mongodb.casbah.commons.{TypeImports, Imports, MongoDBObject}
-import com.mongodb.{BasicDBList, BasicDBObject, DBObject, MongoException}
-import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
-import com.rock.twitterEventDetector.configuration.Constant._
-import com.rock.twitterEventDetector.model.Tweets
-import com.rock.twitterEventDetector.model.Tweets.Tweet
-import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
-import org.apache.spark.graphx._
-import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkContext, SparkConf}
 import com.mongodb.casbah.Imports._
-import scala.collection.JavaConverters._
+import com.mongodb.casbah.commons.{MongoDBObject, TypeImports}
+import com.mongodb.{BasicDBList, BasicDBObject, MongoException}
+import com.rock.twitterEventDetector.configuration.Constant._
+import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
+import com.rock.twitterEventDetector.model.Tweets.Tweet
+ import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
+import org.apache.spark.rdd.RDD
 
 
 /**
   * Created by rocco on 03/02/2016.
   */
-object DbpediaAnnotationCollection {7
+object DbpediaAnnotationCollection {
 
-  val db=MongoCLientSingleton.clientMongo(MONGO_DB_NAME)
+  val db=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
 
 
   def inserDbpediaAnnotationsBulk(  annotations:List[(Long, List[DbpediaAnnotation])]  )={
@@ -43,7 +36,7 @@ object DbpediaAnnotationCollection {7
   def inserDbpediaAnnotationsBulk2(  annotations:Iterator[(Long, List[DbpediaAnnotation])])={
   println(" sto aggiungendo ")
 
-    val collection=MongoCLientSingleton.clientMongo(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
+    val collection=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
     val bulkWrites=collection.initializeUnorderedBulkOperation()
     annotations.foreach(annotation=>{
       bulkWrites.insert(MongoDBObject("_id"->annotation._1,"annotations"->annotation._2.map(ann=>ann.toMaps)))
@@ -62,7 +55,7 @@ object DbpediaAnnotationCollection {7
   def inserDbpediaAnnotations(  annotations:Iterator[(Long, List[DbpediaAnnotation])])={
 
 
-    val collection=MongoCLientSingleton.clientMongo(MONGO_DB_NAME).getCollection("viola")
+    val collection=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME).getCollection("viola")
      annotations.foreach(annotation=>{
        try{
        collection.insert(MongoDBObject("_id"->annotation._1,"annotations"->annotation._2.map(ann=>ann.toMaps)))
@@ -78,7 +71,7 @@ object DbpediaAnnotationCollection {7
 
   def insertDbpediaAnnotationsOfTweet(idTweet:Long,annotations:List[DbpediaAnnotation])={
 
-    val collection=MongoCLientSingleton.clientMongo(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
+    val collection=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
     try{
       collection.insert(MongoDBObject("_id"->idTweet,"annotations"->annotations.map(annotation=>annotation.toMaps)))
 
@@ -91,7 +84,7 @@ object DbpediaAnnotationCollection {7
 
 
   def onlyRelevantTweets()={
-    val db: MongoDB =MongoCLientSingleton.clientMongo(MONGO_DB_NAME)
+    val db: MongoDB =MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
 
     val collectionAnnotation=db("relevantTweets")
     val tweetCollection=db("tweets")
@@ -113,7 +106,7 @@ object DbpediaAnnotationCollection {7
 
 
   def updateTweetsAnnotated()={
-    val db: MongoDB =MongoCLientSingleton.clientMongo(MONGO_DB_NAME)
+    val db: MongoDB =MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
 
     val collectionAnnotation=db("annotazioniSpark")
   collectionAnnotation.par.foreach(x=>
@@ -135,7 +128,7 @@ object DbpediaAnnotationCollection {7
 
 
   def insertAnnotazioniRelevants()={
-    val db: MongoDB =MongoCLientSingleton.clientMongo(MONGO_DB_NAME)
+    val db: MongoDB =MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
 
     val onlyRelevantTweets=db("onlyRelevantTweets")
     val annotations=db("annotazioniSpark")
@@ -160,10 +153,12 @@ object DbpediaAnnotationCollection {7
 
 
   def updateTweetsNotAnnotated()={
-    val db: MongoDB =MongoCLientSingleton.clientMongo(MONGO_DB_NAME)
-
-    val tweets=db("onlyRelevantTweets")
-    tweets.foreach(x=>
+    val db: MongoDB =MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
+    val query =MongoDBObject(
+      "annotated" -> MongoDBObject("$exists" -> false)
+    )
+    val tweets=db("tweets")
+    tweets.find(query).foreach(x=>
 
     {
 
@@ -174,6 +169,7 @@ object DbpediaAnnotationCollection {7
           "$set" -> MongoDBObject("annotated" -> false)
         )
         val result = db("onlyRelevantTweets").update( query, update )
+        println(result)
       }
 
 
@@ -193,7 +189,7 @@ object DbpediaAnnotationCollection {7
   def getAnnotationsOfTweet(idTweet:Long):Option[List[DbpediaAnnotation]]={
 
 
-    val collection=MongoCLientSingleton.clientMongo(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
+    val collection=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME).getCollection("dbpediaAnnotations")
     val result =collection.find(MongoDBObject("_id"->idTweet)).one().asInstanceOf[BasicDBObject]
     if(result==null){
       None

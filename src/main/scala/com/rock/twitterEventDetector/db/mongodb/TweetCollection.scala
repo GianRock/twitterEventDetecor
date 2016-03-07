@@ -1,24 +1,19 @@
-package com.rock.twitterEventDetector.mongoSpark
+package com.rock.twitterEventDetector.db.mongodb
 
 import java.util.Date
 import java.util.concurrent.Executors
-import scala.concurrent.{Await, ExecutionContext, Future}
-import breeze.storage.ConfigurableDefault.fromV
+
 import com.mongodb.casbah.Imports._
 import com.mongodb.casbah.commons.MongoDBObject
-import com.mongodb.casbah.{MongoClient, MongoClientOptions}
-import com.mongodb.casbah.Imports._
-import com.mongodb.{DBCursor, BasicDBObject, DBObject}
- import com.mongodb.casbah.commons.MongoDBObject
 import com.rock.twitterEventDetector.configuration.Constant
-import com.rock.twitterEventDetector.model.Model.{DbpediaAnnotation}
+import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.Tweet
-import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
-import  com.rock.twitterEventDetector.configuration.Constant._
-import org.joda.time.{Period, DateTime}
-import ExecutionContext.Implicits.global
-import scala.util.{Failure, Success}
-import scala.concurrent.duration._
+ import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
+import com.rock.twitterEventDetector.utils.ProprietiesConfig._
+import org.joda.time.{DateTime, Period}
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ExecutionContext, Future}
 object TweetCollection {
 
   /*s
@@ -54,7 +49,7 @@ object TweetCollection {
     */
   def findMinMaxValueDate(minValue: Boolean = true): Date = {
     val sortingOrder = if (minValue == true) 1 else -1
-    val doc = MongoCLientSingleton.clientMongo(Constant.MONGO_DB_NAME)
+    val doc = MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME)
       .getCollection("tweets").find(MongoDBObject(), MongoDBObject("_id" -> 0, "created_at" -> 1)).sort(MongoDBObject("created_at" -> sortingOrder)).limit(1).one()
 
     doc.get("created_at").asInstanceOf[Date]
@@ -67,7 +62,7 @@ object TweetCollection {
     * @return
     */
   def findTweetById(idTweet: Long): Option[Tweet] = {
-    val res =MongoCLientSingleton.clientMongo(Constant.MONGO_DB_NAME).getCollection(Constant.MONGO_TWEET_COLLECTION_NAME).findOne(MongoDBObject("_id" -> idTweet))
+    val res =MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME).getCollection(Constant.MONGO_TWEET_COLLECTION_NAME).findOne(MongoDBObject("_id" -> idTweet))
 
     if (res != null) {
       Some(new Tweet(res))
@@ -78,7 +73,7 @@ object TweetCollection {
   }
 
   def countTweetsInTimeInterval(timeStart: Date, timeEnd: Date): String = {
-    val collection = MongoCLientSingleton.clientMongo(Constant.MONGO_DB_NAME).getCollection(Constant.MONGO_TWEET_COLLECTION_NAME)
+    val collection = MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME).getCollection(Constant.MONGO_TWEET_COLLECTION_NAME)
 
     //val query2 = MongoDBObject(("foo" -> "bar"), ("baz" -> "qux"))
     val fields = MongoDBObject("_id" -> 1) //"cleaned_text"->1)
@@ -124,10 +119,16 @@ object TweetCollection {
 
   }
 
+  /**
+    *
+    * @param start
+    * @param end
+    * @return
+    */
   def findTweetsBetweenDates(start: Date, end: Date): List[Tweet] = {
 
     println((start,end))
-    val collection: MongoCollection =MongoCLientSingleton.clientMongo(Constant.MONGO_DB_NAME)("tweets")
+    val collection: MongoCollection =MongoCLientSingleton.myMongoClient(tweetdb)("tweets")
 
     val q = $and("annotated" $exists  false ,("created_at" $gte start $lt end))
     println(q.toString)
@@ -236,11 +237,12 @@ object TweetCollection {
 
     val from = new DateTime(minDateValue)
     val to = new DateTime(maxDateValue)
-   val itString=dateRangeString(from,to,Period.minutes(20))
+   val itString=dateRangeString(from,to,Period.hours(6))
+    println(itString.length)
 
    // val call:String="./bin/spark-submit   --class com.rock.twitterEventDetector.mongoSpark.MainAnnotator   --master local[*]   provaSpark-assembly-1.0.jar"
-
-    itString.foreach(println)
+    val callJar="java -Xmx20g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.mongoSpark.MainAnnotator"
+    itString.foreach(x=>println(callJar+" "+x+" >> out.log"))
 
 
 

@@ -2,11 +2,13 @@ package com.rock.twitterEventDetector.mongoSpark
 
 import com.mongodb.DBObject
 import com.mongodb.casbah.commons.Imports
+import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
 import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.{AnnotatedTweet, Tweet}
 import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
- import org.apache.spark.graphx._
+import com.rock.twitterEventDetector.utils.ProprietiesConfig._
+import org.apache.spark.graphx._
 import com.rock.twitterEventDetector.configuration.Constant
 import org.bson.{BSONObject, Document}
 
@@ -68,7 +70,10 @@ object MainAnnotator {
 
 
 
-    val conf = new SparkConf().setAppName("MainAnnotator").setMaster("local[8]")
+    val conf = new SparkConf().setAppName("MainAnnotator")
+      .setMaster("local[*]")
+     . set("spark.executor.memory ", "20g")
+
     val sc = new SparkContext(conf)
 
     val tweets: RDD[(Long, Tweet)] = SparkMongoIntegration.getTweetsAsRDDInTimeInterval(sc, mindate.toDate, maxDate.toDate)
@@ -78,8 +83,13 @@ object MainAnnotator {
     val annotations=nlpPipeLine(tweets)
 
     val outputConfig = new Configuration()
+    val mongoUri=if(auth){
+      "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/"+ tweetdb+".annotazioniSpark?authSource="+authdb
+    }else{
+      "mongodb://"+host+":27017/"+ tweetdb+".annotazioniSpark"
+    }
     outputConfig.set("mongo.output.uri",
-      "mongodb://localhost:27017/"+com.rock.twitterEventDetector.configuration.Constant.MONGO_DB_NAME+".annotazioniSpark")
+      mongoUri)
 
 
 
@@ -90,9 +100,9 @@ object MainAnnotator {
       classOf[DBObject],
       classOf[MongoOutputFormat[Object, DBObject]],
       outputConfig)
+
+
   }
-
-
 
 
 }

@@ -1,18 +1,15 @@
-package com.rock.twitterEventDetector.mongoSpark
+package com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration
 
 import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.mongodb.hadoop.MongoInputFormat
 import com.rock.twitterEventDetector.configuration.Constant
-import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.Tweet
-import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
-import com.rock.twitterEventDetector.utils.ProprietiesConfig
+import com.rock.twitterEventDetector.utils.ProprietiesConfig._
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 import org.bson.{BSONObject, Document}
-import org.joda.time.DateTime
 
 import scala.collection.JavaConverters._
 /**
@@ -56,24 +53,24 @@ object SparkMongoIntegration {
     * @param query
     * @return
     */
-  def getTweetsAsTupleRDD(sc:SparkContext,query:Document,  createSplits:Boolean=true):RDD[(Long, Tweet)]={
+  def getTweetsAsTupleRDD(sc:SparkContext,query:Option[Document],collectionName:String="tweets",createSplits:Boolean=true):RDD[(Long, Tweet)]={
 
-    val mongoConfig = new Configuration()
 
-    val mongoUri=if(ProprietiesConfig.auth){
-      "mongodb://"+Constant.MONGO_DB_USER+":"+"sparkmongo"+"@"+Constant.MONGO_URL+":27017/"+ Constant.MONGO_DB_NAME+"." + Constant.MONGO_TWEET_COLLECTION_NAME+"?authSource=admin"
+
+    val mongoUri=if(auth){
+      "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/"+ tweetdb+"."+collectionName+"?authSource="+authdb
     }else{
-      "mongodb://"+Constant.MONGO_URL+":27017/"+ Constant.MONGO_DB_NAME+"." + Constant.MONGO_TWEET_COLLECTION_NAME
+      "mongodb://"+host+":27017/"+ tweetdb+"."+collectionName
     }
 
-
+    val mongoConfig = new Configuration()
     //val mongoUri="mongodb://"+Constant.MONGO_DB_USER+":"+"sparkmongo"+"@"+Constant.MONGO_URL+":27017/"+ Constant.MONGO_DB_NAME+"." + Constant.MONGO_TWEET_COLLECTION_NAME+"?authSource=admin"
 
     mongoConfig.set("mongo.input.uri",mongoUri)
-    if(query!=null)
-      mongoConfig.set("mongo.input.query", query.toJson)
+    if(query.isDefined)
+      mongoConfig.set("mongo.input.query", query.get.toJson)
     mongoConfig.set("mongo.input.split.create_input_splits", "" + createSplits)
-    mongoConfig.set("mongo.input.split.use_range_queries",""+true)
+    //mongoConfig.set("mongo.input.split.use_range_queries",""+true)
     val documents = sc.newAPIHadoopRDD(
       mongoConfig,                // Configuration
       classOf[MongoInputFormat],  // InputFormat
@@ -91,59 +88,7 @@ object SparkMongoIntegration {
 
 
 
-  /**
-    *
-    * @param sc
-    * @param query
-    * @return
-    */
-  def getRelevantTweetsAsTupleRDD(sc:SparkContext,query:Option[Document],  createSplits:Boolean=true):RDD[(Long, Tweet)]={
 
-    val mongoConfig = new Configuration()
-    mongoConfig.set("mongo.input.uri",
-      "mongodb://localhost:27017/"+ Constant.MONGO_DB_NAME+ "." + "onlyRelevantTweets")
-    query match {
-      case Some(queryDocument)=>
-        mongoConfig.set("mongo.input.query", queryDocument.toJson)
-      case None=>
-    }
-
-
-
-    mongoConfig.set("mongo.input.split.create_input_splits", "" + createSplits)
-    mongoConfig.set("mongo.input.split.use_range_queries",""+true)
-    val documents = sc.newAPIHadoopRDD(
-      mongoConfig,                // Configuration
-      classOf[MongoInputFormat],  // InputFormat
-      classOf[Object],            // Key type
-      classOf[BSONObject])        // Value type
-    val tweets=documents.map{
-        case(id:Object,tweetBson:BSONObject)=>{
-          val hashtags =  tweetBson.get("entities").asInstanceOf[BSONObject].get("hashtags").asInstanceOf[java.util.List[BSONObject]].asScala.toList;
-          val hashTagsValues=hashtags.map {
-            hashtag => {
-              //  val indices: List[Integer] = hashtag.get("indices").asInstanceOf[java.util.List[Integer]].asScala.toList
-              //  HashTag(hashtag.get("text").asInstanceOf[String], (indices(0), indices(1)))
-              hashtag.get("text").asInstanceOf[String]
-            }
-          }
-
-
-
-          val splittedHashTags = if (tweetBson.containsField("splitted_hashtags")) Some(tweetBson.get("splitted_hashtags").asInstanceOf[String]) else None
-
-          val tweet=new Tweet(id.asInstanceOf[Long],tweetBson.get("cleaned_text").toString,tweetBson.get("created_at").asInstanceOf[Date],hashTagsValues,splittedHashTags)
-          (id.asInstanceOf[Long],tweet)
-        }
-
-
-      }
-
-
-
-    tweets
-
-  }
 
 
   /**
@@ -160,7 +105,7 @@ object SparkMongoIntegration {
     val conditions:List[Document]=  List(new Document("created_at",new Document("$gte",startDate)) ,
       new Document("created_at",new Document("$lt", endDate)));
     val query: Document = new Document("$and", conditions.toList.asJava)
-    getTweetsAsTupleRDD(sc,query,false)
+    getTweetsAsTupleRDD(sc,Some(query))
 
   }
 
@@ -173,10 +118,14 @@ object SparkMongoIntegration {
     * @return an RDD consisting of tuple id,MyTweet of all tweets in the collection between those dates
     */
   def getTweetsAsRDDInTimeInterval(sc:SparkContext,startDate: Date,endDate:Date):RDD[(Long,Tweet)]={
-    val conditions:List[Document]=  List(new Document("created_at",new Document("$gte",startDate)) ,
+    val conditions:List[Document]=  List(
+      new Document("annotated",new Document("$exists",false)),
+      new Document("created_at",new Document("$gte",startDate)) ,
       new Document("created_at",new Document("$lt", endDate)));
-    val query: Document = new Document("$and", conditions.toList.asJava)
-    getTweetsAsTupleRDD(sc,query,false)
+
+
+     val query: Document = new Document("$and", conditions.toList.asJava)
+     getTweetsAsTupleRDD(sc,Some(query),"tweets",true)
 
   }
 
@@ -219,10 +168,10 @@ object SparkMongoIntegration {
       .setMaster("local[*]")
     val sc = new SparkContext(sparkConf)
 
-    val tweets: RDD[(Long, Tweet)] =getRelevantTweetsAsTupleRDD(sc,None)
+    val tweets: RDD[(Long, Tweet)] =getTweetsAsRDDInTimeInterval(sc,startTime,endTime)
+    //getTweetsAsTupleRDD(sc,None,"tweets",false)
 
 
-    println(tweets.count())
 
     /*
         firstTweets.par.foreach{
@@ -234,7 +183,7 @@ object SparkMongoIntegration {
 
         }*/
 
-    System.out.println(tweets.count())
+    System.out.println("NUMBER OF TWEETS "+tweets.count())
     sc.stop()
   }
 }

@@ -8,8 +8,9 @@ package com.rock.twitterEventDetector.dbscanTweet
 import java.{util, lang}
 import java.util.Date
 
+import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
+import com.rock.twitterEventDetector.db.mongodb.{DbpediaAnnotationCollection, TweetCollection, DbpediaCollection}
 import com.rock.twitterEventDetector.model.Tweets.{AnnotatedTweetWithDbpediaResources, AnnotatedTweet, Tweet}
-import com.rock.twitterEventDetector.mongoSpark.{TweetCollection, SparkMongoIntegration, DbpediaAnnotationCollection, DbpediaCollection}
 import com.mongodb.casbah.commons.Imports
 import com.mongodb. hadoop.{MongoOutputFormat, BSONFileOutputFormat}
 import com.rock.twitterEventDetector.lsh.{IndexedRDDLshModel, LSH, LSHModel}
@@ -197,6 +198,9 @@ tweets.cache()
 
       val tfidfVectors: RDD[(VertexId, SparseVector)] =generateTfIdfVectors(data,sizeDictionary)
 
+      /**
+        * creo il modello lsh
+        */
       val lsh = new LSH(tfidfVectors, sizeDictionary, numHashFunc = 13, numHashTables = 10)
       val lshModel = lsh.run()
       val indexedLSH=new IndexedRDDLshModel(lshModel)
@@ -307,6 +311,7 @@ tweets.cache()
 
 
    /**
+     * esegue il clustering confrontando i tweets solo con la similarità del coseno
      *
      * @param sc
      * @param data
@@ -315,7 +320,7 @@ tweets.cache()
      */
    def startClusteringTweetsCosOnly(sc: SparkContext,
                              data: RDD[(Long, Tweet)],
-                             minPts: Int, eps: Double)  = {
+                             minPts: Int, eps: Double): VertexRDD[VertexId] = {
 
 
 
@@ -415,7 +420,7 @@ tweets.cache()
   def main222(args: Array[String]) {
     val sparkConf = new SparkConf()
       .setMaster("local[*]")
-      .setAppName("annotations")
+      .setAppName("clustering")
       .set("spark.executor.memory ", "10g")
       .set("spark.local.dir", "/tmp/spark-temp");
     val sc = new SparkContext(sparkConf)
@@ -428,142 +433,9 @@ tweets.cache()
 
     val maxDate = new Date(minDAte.getTime + 10000)
     val tweetsfirst72H: RDD[(VertexId, Tweet)] = SparkMongoIntegration.getTweetsFromDateOffset(sc, minDAte,1)
-    //  val tentweets=tweetsfirst72H.take(10);
-    tweetsfirst72H.cache()
-    println(" NUMBER Of tweeets" + tweetsfirst72H.count())
-
-    println("finished loading tweets from mongo")
-    /**
-      * primo passo da fare è generare
-      * per ogni tweet vettori di hashingTF
-      */
-    val sizeDictionary = Math.pow(2, 18).toInt
-
-    val tfidfVectors = generateTfIdfVectors(tweetsfirst72H, sizeDictionary)
-
-    //val lsh = new LSH(tfidfVectors, sizeDictionary, numHashFunc = 13, numHashTables = 10)
-    //val model = lsh.run()
-    //model.save(sc, "target/first72-13r10b")
-
-
-     val lshModelLoaded: LSHModel = LSHModel.load(sc, "target/first72-13r10b")
-
-    println("finished loading lsh model")
-    //annotatateTweetRDDAndSaveResult(tweetsfirst72H)
-   //   startClusteringTweets(sc,tweetsfirst72H,lshModelLoaded,20,0.35)
 
   }
 
 }
-// startClusteringTweets(sc: SparkContext, tweetsfirst72H, lshModelLoaded,10,0.35)
 
-
-
-
-// val candidateList= lshModelLoaded.getCandidates(256561943450636288L).collect();
-//  println(candidateList)
-//val hashTables: RDD[((Int, String), VertexId)] =lshModelLoaded.hashTables
-//  val outputConfig: Configuration = new Configuration
-//outputConfig.set("mongo.output.uri", "mongodb://127.0.0.1:27017/" + Constants.MONGO_DB_NAME + "." + "lshTable")
-/*
-      val lshTableBsons: RDD[(Null, BasicBSONObject)] =lshModelLoaded.hashTables.map{
-        case((b:Int,signature:String),idtweet:Long)=> {
-
-          var mapObj=Map("b"->b,"sig"->signature,"idtweet"->idtweet)
-          var bson= new BasicBSONObject(mapObj.asJava)
-
-          (null, bson)
-
-        }
-
-      }*/
-
-/**
-  *lshTableBsons.saveAsNewAPIHadoopFile("file:///this-is-completely-unused",
-  *classOf[Object],
-  *classOf[BSONObject],
-  *classOf[MongoOutputFormat[Object, BSONObject]],
-  *outputConfig)
-  *println("hash etable dim"+lshModelLoaded.hashTables.count())
-  *sc.stop()
-
-  *val candidateList: RDD[VertexId] = lshModelLoaded.getCandidates(tentweets(0)._1)
-  *println("candidate list count"+candidateList.count())
-  *val candidateList2: RDD[VertexId] = lshModelLoaded.getCandidates(tentweets(1)._1)
-
-  *println("candidate list coun2t"+candidateList2.count())
-
-
-  */
-
-//val connectedGraphsCluster: VertexRDD[VertexId] =
-
-//
-
-//val clusters=connectedGraphsCluster.map(x=>x._2).distinct().collect()
-//  println(" NUMBER OF CLUSTER GENERATED "+clusters.size)
-
-/*
-    val annotatedTweetRDD =tweetsfirst72H.mapPartitions {
-      it => {
-        val annotator=new DbpediaSpootLightAnnotator
-        it.map {
-          case (idtweet, tweet) => {
-            val annotations=annotator.annotateText(tweet.text).getOrElse(List.empty[DbpediaAnnotation])
-
-            (idtweet,annotations)
-          }
-        }
-      }
-    annotatedTweetRDD.cache()
-    //println(annotatedTweetRDD.count())
-   // annotatedTweetRDD.foreachAsync(x=>print(x))
-
-/*
-
-      val outputConfig = new Configuration()
-     outputConfig.set("mongo.output.uri",
-       "mongodb://localhost:27017/"+Constants.MONGO_DB_NAME+".dbpediaAnnotations")
-
-
-
-
-    annotatedTweetRDD.saveAsNewAPIHadoopFile(
-      "file:///this-is-completely-unused",
-      classOf[Object],
-      classOf[BSONObject],
-      classOf[MongoOutputFormat[Object, BSONObject]],
-      outputConfig)
-  }
-}
-*/
-    val annotatedTweetsColl=annotatedTweetRDD.collect()
-    annotatedTweetsColl.foreach(
-      annotatedTweet=>DbpediaAnnotationCollection.insertDbpediaAnnotationsOfTweet(annotatedTweet._1,annotatedTweet._2)
-
-      //AnnotationsCollection.insertDbpediaAnnotations(annotatedTweet._1.toLong,annotatedTweet._2.map(annotation=>annotation.toMaps).asJava)
-        //DbpediaAnnotationCollection.insertDbpediaAnnotationsOfTweet(annotatedTweet._1,annotatedTweet._2)
-
-    )
-
-
-      /*
-    val tweets1000: Array[(VertexId, Tweet)] =tweetsfirst72H.take(1000)
-    val annotator=new DbpediaSpootLightAnnotator
-    tweets1000.par.foreach{
-      case(id,tweet)=>{
-        val annotations: Option[List[DbpediaAnnotation]] =annotator.annotateText(tweet.text)
-        DbpediaAnnotationCollection.insertDbpediaAnnotationsOfTweet(id,annotations.getOrElse(List.empty[DbpediaAnnotation]))
-
-      }
-
-    }*/
-
-  }
-}
-
-
-
-
-    }*/
 

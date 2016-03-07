@@ -1,6 +1,5 @@
-package com.rock.twitterEventDetector.mongoSpark
+package com.rock.twitterEventDetector.db.mongodb
 
-import com.mongodb.casbah.{TypeImports, MongoClient}
 import com.mongodb.casbah.commons.MongoDBObject
 import com.rock.twitterEventDetector.model.Model.DbpediaResource
 
@@ -16,7 +15,7 @@ object DbpediaCollection {
 
 
   def findDbpediaResourceByURI(uriDBpedia:String):Option[DbpediaResource]={
-    val res =MongoCLientSingleton.clientMongo("dbpedia").getCollection("pagelinks").findOne(MongoDBObject ("_id"->uriDBpedia))
+    val res =MongoCLientSingleton.myMongoClient("dbpedia").getCollection("pagelinks").findOne(MongoDBObject ("_id"->uriDBpedia))
     if(res!=null){
       val links=res.get("value").asInstanceOf[java.util.List[String]].asScala.toSet
 

@@ -4,6 +4,7 @@ import java.io.InputStream
 import java.util
 import javax.annotation.Resource
 
+import com.rock.twitterEventDetector.db.mongodb.TweetCollection
 import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import edu.stanford.nlp.ling.TaggedWord
 import scala.io.Source._
@@ -16,43 +17,21 @@ import scala.reflect.io.Path
 object as {
 
     def main(args: Array[String]) {
+      val annotator = new DbpediaSpootLightAnnotator
 
-
-
-
-     // val stream : InputStream = getClass.getResourceAsStream("/nlp/oov.txt")
-     // val lines = scala.io.Source.fromInputStream( stream ).getLines.toList
-/*
-      println("DIM FILE "+lines.length)
-      val oovMap = lines.par.map{
-        line=> {
-          val parts= line.split("\t")
-          println(parts.size)
-          (parts(0),parts(1))
+      val idList = List(265619505517060096L, 265619505449926656L, 265619505462509568L, 265619505563189249L, 265619505240215552L)
+      val tweets = idList.map {
+        id => {
+          val tweet = TweetCollection.findTweetById(id)
+          (tweet, annotator.annotateText(tweet.get.text).getOrElse(List.empty[DbpediaAnnotation]))
         }
-      }*/
 
-      //val stanford= Lemmatizer.createNLPPipeline()
-    //  val lemmas=  Lemmatizer.plainTextToLemmas("Awesome. RT  Geez.  tweets a picture of a $38,091 bill from rookie night. Hope Shea had some help picking up that one",stanford)
-    //  println(lemmas.mkString(" - "))
-      val g: String = "Looks like the cas flash mob MJ   dance will either on Saturday 27th or Sunday 28th- subject to weather, check your email for infoy"
 
-      val posTagger=new PosTagger
-      val posTagMap =posTagger.tagSentenenceToMap(g)
-      posTagMap.foreach{
-        tagged=>println(tagged)
       }
-
-
-      val dbpediaAnn=new DbpediaSpootLightAnnotator()
-
-       val c: List[DbpediaAnnotation]=dbpediaAnn.annotateText(g).get
-      c.foreach(
-        x=>println(x.toMaps)
-      )
-      //DbpediaAnnotationCollection.insertDbpediaAnnotationsOfTweet(2433l,c)
+      tweets.foreach(println)
 
 
     }
+
 
 }
