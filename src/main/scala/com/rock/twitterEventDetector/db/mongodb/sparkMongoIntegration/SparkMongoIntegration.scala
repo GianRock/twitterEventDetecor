@@ -20,6 +20,8 @@ object SparkMongoIntegration {
 
   /**
     *
+    * funzione che mappa un bson object in un oggetto tweet
+    *
     * @param id
     * @param tweetBson
     * @return
@@ -47,10 +49,15 @@ object SparkMongoIntegration {
 
   def HOUR_MILLISEC:Long=3600000L
 
+
   /**
-    *
+    * questo metodo
+    * a partire da una collection di tweets
+    * crea un pair Rdd composto da idTweet,TweetObject
     * @param sc
     * @param query
+    * @param collectionName
+    * @param createSplits
     * @return
     */
   def getTweetsAsTupleRDD(sc:SparkContext,query:Option[Document],collectionName:String="tweets",createSplits:Boolean=true):RDD[(Long, Tweet)]={
@@ -91,23 +98,7 @@ object SparkMongoIntegration {
 
 
 
-  /**
-    * retrive all tweets in the time interval [dateStart,dateEnd[
-    *
-    * @param sc sparkContext
-    * @param startDate date from which start search tweets (inclusive)
-    * @param hourNumbers numberHours
-    * @return an RDD consisting of tuple id,MyTweet of all tweets in the collection between those dates
-    */
-  def getTweetsFromDateOffset(sc:SparkContext,startDate: Date,hourNumbers:Int):RDD[(Long,Tweet)]={
 
-    val endDate=new Date(startDate.getTime+HOUR_MILLISEC*hourNumbers)
-    val conditions:List[Document]=  List(new Document("created_at",new Document("$gte",startDate)) ,
-      new Document("created_at",new Document("$lt", endDate)));
-    val query: Document = new Document("$and", conditions.toList.asJava)
-    getTweetsAsTupleRDD(sc,Some(query))
-
-  }
 
   /**
     * retrive all tweets in the time interval [dateStart,dateEnd[
@@ -117,15 +108,16 @@ object SparkMongoIntegration {
     * @param endDate date value until search tweets (exclusive)
     * @return an RDD consisting of tuple id,MyTweet of all tweets in the collection between those dates
     */
-  def getTweetsAsRDDInTimeInterval(sc:SparkContext,startDate: Date,endDate:Date):RDD[(Long,Tweet)]={
+  def getTweetsAsRDDInTimeInterval(sc:SparkContext,startDate: Date,endDate:Date,collectionName:String="tweets"):RDD[(Long,Tweet)]={
     val conditions:List[Document]=  List(
-      new Document("annotated",new Document("$exists",false)),
+     // new Document("annotated",new Document("$exists",false)),
+     // new Document("annotated",new Document("$exists",false)),
       new Document("created_at",new Document("$gte",startDate)) ,
       new Document("created_at",new Document("$lt", endDate)));
 
 
      val query: Document = new Document("$and", conditions.toList.asJava)
-     getTweetsAsTupleRDD(sc,Some(query),"tweets",true)
+     getTweetsAsTupleRDD(sc,Some(query),collectionName,true)
 
   }
 
