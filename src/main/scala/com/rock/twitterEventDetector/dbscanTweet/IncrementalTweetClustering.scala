@@ -25,23 +25,31 @@ import com.rock.twitterEventDetector.dbscanTweet.SparkNlpOps._
 /**
   * Created by rocco on 26/01/2016.
   */
-class TweetClustering(eps: Double, minPts: Int) extends Serializable {
+class IncrementalTweetClusteringTweetClustering(eps: Double, minPts: Int) extends Serializable {
   type IdTweet = Long
   type IdCluster = Long
 
+  def removeExpiredObjects(sc:SparkContext,expiredObjects:Set[Long],oldData: RDD[(IdTweet, Tweet)], lshModel: LSHModel): (RDD[(IdTweet, Tweet)], LSHModel) = {
+     val broadcastExpired=sc.broadcast(expiredObjects)
 
-
-
-
-
-
-
-
+    (oldData.filter(x=>broadcastExpired.value.contains(x._1)==0),lshModel.remove(broadcastExpired))
+  }
 
   /**
     * esegue il clustering confrontando i tweets solo con la similarità del coseno
     */
-  def run(data: RDD[(Long, Tweet)],tfIdfVectors:RDD[(Long,SparseVector)],lshModel: LSHModel, sc: SparkContext): RDD[(IdTweet, Date, IdCluster)] = {
+  def run(newData: RDD[(Long, Tweet)],
+          newTfIdfVectors:RDD[(Long,SparseVector)],
+          oldData:RDD[(Long, Tweet)],
+
+          expiredObjects:Set[Long],
+          lshModel: LSHModel, sc: SparkContext): RDD[(IdTweet, Date, IdCluster)] = {
+
+
+    val (c:RDD[(IdTweet, Tweet)],newLshModel:LSHModel)=removeExpiredObjects(sc,expiredObjects,oldData,lshModel)
+
+
+
 
     val indexedLSH = new IndexedRDDLshModel(lshModel)
 
@@ -49,7 +57,7 @@ class TweetClustering(eps: Double, minPts: Int) extends Serializable {
 
     // val tfidfVectors: RDD[(VertexId, SparseVector)] = TweetClustering.generateTfIdfVectors(data,sizeDictionary)
 
-    val annTweets: collection.Map[IdTweet, (Tweet, SparseVector)] = data.join(tfIdfVectors).collectAsMap()
+    val annTweets: collection.Map[IdTweet, (Tweet, SparseVector)] = newData.join(newTfIdfVectors).collectAsMap()
 
     val objectNeighborsList: List[(IdTweet, IdTweet)] = getSimilarCouples(indexedLSH,annTweets)
     val neighborRDD=sc.parallelize(objectNeighborsList)
@@ -61,7 +69,7 @@ class TweetClustering(eps: Double, minPts: Int) extends Serializable {
 
     val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices
 
-    val clusteredTweets: RDD[(VertexId, Date, VertexId)] = data.leftOuterJoin(connectedComponents)
+    val clusteredTweets: RDD[(VertexId, Date, VertexId)] = newData.leftOuterJoin(connectedComponents)
       .map{
         case(objectId,(instance, Some(clusterId))) => (objectId, instance.createdAt, clusterId)
         case(objectId,(instance, None)) => (objectId, instance.createdAt,-2L)
@@ -76,7 +84,7 @@ class TweetClustering(eps: Double, minPts: Int) extends Serializable {
     * @param similarCouples
     * @return
     */
-    def getCoreCouples(similarCouples: RDD[(Long, Long)]): RDD[(Long, Long)] = {
+  private def getCoreCouples(similarCouples: RDD[(Long, Long)]): RDD[(Long, Long)] = {
     similarCouples.groupByKey()
       .filter{ case(_,neighborhood)=>neighborhood.size>=minPts}
       .flatMap {
@@ -88,11 +96,12 @@ class TweetClustering(eps: Double, minPts: Int) extends Serializable {
   /**
     * thi method get for each tweeet the candidate neighbors from lhmodel
     * and filter only the ones whose distance is below the trehsold eps.
+    *
     * @param indexedLSH
     * @param mapTweets
     * @return
     */
-  protected def getSimilarCouples(indexedLSH:IndexedRDDLshModel,mapTweets : collection.Map[VertexId, (Tweet, SparseVector)]): List[(Long, Long)] = {
+  private def getSimilarCouples(indexedLSH:IndexedRDDLshModel,mapTweets : collection.Map[VertexId, (Tweet, SparseVector)]): List[(Long, Long)] = {
 
 
     mapTweets.toList.flatMap {

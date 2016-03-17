@@ -22,7 +22,7 @@ import scala.collection.{Map, mutable}
   *
   *
   */
-class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)] = null, executionName:String, minPts: Int =4, eps:Double=1.117 ) extends Serializable {
+class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], executionName:String, minPts: Int =4, eps:Double=1.117 ) extends Serializable {
 
   val NOISE= {
     -2l

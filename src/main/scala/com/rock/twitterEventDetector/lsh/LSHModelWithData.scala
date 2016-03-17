@@ -5,6 +5,7 @@ package com.rock.twitterEventDetector.lsh
   */
 
 import akka.io.Udp.SO.Broadcast
+import com.rock.twitterEventDetector.lsh.partitioners.{HashFuncPartitioner, BucketPartitioner}
 import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.SparseVector
@@ -25,7 +26,7 @@ import org.json4s.jackson.JsonMethods._
   * @param numHashTables number of hashTables.
   *
   * */
-class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int,val hashFunctions: Seq[(Hasher, Int)], var hashTables: RDD[((Int, String), (Long,SparseVector))])
+class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int,val hashFunctions: Seq[(Int,Hasher)], var hashTables: RDD[((Int, String), (Long,SparseVector))])
   extends Serializable with Saveable {
 
 
@@ -33,20 +34,20 @@ class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int
 
   /** hash a sinasgle vector against an existing model and return the candidate buckets */
   def filter(data: SparseVector, model: LSHModel, itemID: Long): RDD[Long] = {
-    val hashKey = hashFunctions.map(h => h._1.hash(data)).mkString("")
+    val hashKey = hashFunctions.map(h => h._2.hash(data)).mkString("")
     hashTables.filter(x => x._1._2 == hashKey).map(a => a._2._1)
   }
 
   /** creates hashValue for each hashTable.*/
   def hashValue(data: SparseVector): List[(Int, String)] =
-    hashFunctions.map(a => (a._2 % numHashTables, a._1.hash(data)))
+    hashFunctions.map(a => (a._1 % numHashTables, a._2.hash(data)))
       .groupBy(_._1)
       .map(x => (x._1, x._2.map(_._2).mkString(""))).toList
 
   /** returns candidate set for given vector id.*/
   def getCandidates(vId: Long): RDD[(Long, SparseVector)] = {
-    val buckets = hashTables.filter(x => x._2 == vId).map(x => x._1).distinct().collect()
-    hashTables.filter(x => buckets contains x._1).map(x => x._2).filter(x => x != vId)
+    val buckets: Array[(Int, String)] = hashTables.filter(x => x._2._1==vId ).map(x => x._1).distinct().collect()
+    hashTables.filter(x => buckets contains x._1).map(x => x._2).filter(x => x._1.equals(vId)==false )
   }
 
   /** returns candidate set for given vector.*/
@@ -65,11 +66,17 @@ class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int
 
   /** remove sparse vector with vector Id: vId from the model. */
   def remove (vId: Long, sc: SparkContext): LSHModelWithData = {
-    hashTables =  hashTables.filter(x => x._2 != vId)
+    hashTables =  hashTables.filter(x => x._2._1 != vId)
     this
   }
+
+  /**
+    *
+    * @param expiderObjects
+    * @return
+    */
   def remove (expiderObjects: org.apache.spark.broadcast.Broadcast[Set[Long]]): LSHModelWithData = {
-    hashTables =  hashTables.filter(x =>expiderObjects.value.contains(x._2._1)==0)
+    hashTables=hashTables.filter(x =>expiderObjects.value.contains(x._2._1)==false)
     this
   }
 
@@ -119,7 +126,7 @@ object LSHModelWithData {
         .saveAsTextFile(Loader.dataPath(path))*/
 
 
-     sc.makeRDD[(Hasher,Int)]( model.hashFunctions).saveAsObjectFile(Loader.hasherPath(path))
+      sc.makeRDD[(Int,Hasher)]( model.hashFunctions).partitionBy(new HashFuncPartitioner(model.numHashTables)).saveAsObjectFile(Loader.hasherPath(path))
       model.hashTables.saveAsObjectFile(Loader.dataPath(path))
 
     }
@@ -131,7 +138,7 @@ object LSHModelWithData {
      // assert(className == thisClassName)
       //assert(formatVersion == thisFormatVersion)
       val hashTables =sc.objectFile[((Int,String),(Long,SparseVector))] (Loader.dataPath(path)).partitionBy(new BucketPartitioner(numBands))
-      val hashers=sc.objectFile[(Hasher,Int)](Loader.hasherPath(path)).collect()
+      val hashers=sc.objectFile[(Int,Hasher)](Loader.hasherPath(path)).collect()
 
     /*
       val numBands = hashTables.map(x => x._1._1).distinct.count()
@@ -157,11 +164,11 @@ object LSHModelWithData {
       //check size of data
      // assert(hashTables.count != 0, s"Loaded hashTable data is empty")
       //check size of hash functions
-     // assert(hashers.size != 0, s"Loaded hasher data is empty")
+   assert(hashers.size != 0, s"Loaded hasher data is empty")
 
       //check hashValue size. Should be equal to numHashFunc
-      //assert(hashTables.map(x => x._1._2).filter(x => x.size != numHashFunc).collect().size == 0,
-      //  s"hashValues in data does not match with hash functions")
+      assert(hashTables.map(x => x._1._2).filter(x => x.size != numHashFunc).collect().size == 0,
+        s"hashValues in data does not match with hash functions")
 
       //create model
       val model = new LSHModelWithData(0, numHashFunc, numBands,hashers,hashTables)

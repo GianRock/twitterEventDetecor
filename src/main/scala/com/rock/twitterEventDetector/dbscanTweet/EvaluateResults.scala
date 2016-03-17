@@ -1,5 +1,6 @@
 package com.rock.twitterEventDetector.dbscanTweet
 
+import com.rock.twitterEventDetector.db.mongodb.TweetCollection
 import org.apache.spark.{SparkContext, SparkConf}
 
 /**
@@ -18,7 +19,17 @@ object EvaluateResults {
     val sc = new SparkContext(sparkConf)
     val rddResults=sc.textFile("/home/rocco/IdeaProjects/resources/target/risClustering")
    val results= rddResults.map(x=>x.replaceAll("[()]","").split(",")).map(array=>(array(2),array(0)))
-    val clust=results.groupByKey().map(x=>(x._1,x._2.size)).filter(x=>x._2>100).collect().foreach(println)
+    val clust=results.groupByKey().filter(x=>x._2.size>10)
 
+   val clusteredCOllect= clust.collect()
+   val trueClusterdCount: Array[(String, (Iterable[String], Int))] =clusteredCOllect.map{
+     case(id,clusterdData)=>(id,(clusterdData,clusterdData.filter(x=>TweetCollection.checkRelevant(x.toLong)).size))
+   }.filter(x=>x._2._2>0)
+
+   val csas: Array[(String, Iterable[Long])] = trueClusterdCount.map{
+      case(idcluster,(clusters,count))=>
+        (idcluster, clusters.flatMap(x=>TweetCollection.findRelevantTweetById(x.toLong)))
+    }
+    csas.foreach(println)
   }
 }

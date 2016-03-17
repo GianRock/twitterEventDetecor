@@ -111,7 +111,7 @@ object SparkMongoIntegration {
   def getTweetsAsRDDInTimeInterval(sc:SparkContext,startDate: Date,endDate:Date,collectionName:String="tweets"):RDD[(Long,Tweet)]={
     val conditions:List[Document]=  List(
      // new Document("annotated",new Document("$exists",false)),
-     // new Document("annotated",new Document("$exists",false)),
+  //    new Document("annotated",new Document("$exists",false)),
       new Document("created_at",new Document("$gte",startDate)) ,
       new Document("created_at",new Document("$lt", endDate)));
 

@@ -3,6 +3,7 @@ package com.rock.twitterEventDetector.lsh
   * Created by maytekin on 06.08.2015.
   */
 
+import akka.io.Udp.SO.Broadcast
 import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.SparseVector
@@ -23,15 +24,15 @@ import org.json4s.jackson.JsonMethods._
   * @param numHashTables number of hashTables.
   *
   * */
-class LSHModel(val m: Int, val numHashFunc : Int, val numHashTables: Int)
+class LSHModel(val m: Int, val numHashFunc : Int, val numHashTables: Int, val hashFunctions: Seq[(Int,Hasher)], var hashTables: RDD[((Int, String), Long)])
   extends Serializable with Saveable {
 
-
- var hashFunctions=(for (i <- 0 until numHashFunc * numHashTables)
-    yield (Hasher(m),i)).toList
+/*
+  var hashFunctions=(for (i <- 0 until numHashFunc * numHashTables)
+    yield (Hasher(m),i)).toList*/
 
   /** the "hashTables". ((hashTableID, hash key), vector_id) */
-  var hashTables: RDD[((Int, String), Long)] = null
+ // var hashTables: RDD[((Int, String), Long)] = null
 
   /** generic filter function for hashTables. */
   def filter(f: (((Int, String), Long)) => Boolean): RDD[((Int, String), Long)] =
@@ -39,13 +40,13 @@ class LSHModel(val m: Int, val numHashFunc : Int, val numHashTables: Int)
 
   /** hash a single vector against an existing model and return the candidate buckets */
   def filter(data: SparseVector, model: LSHModel, itemID: Long): RDD[Long] = {
-    val hashKey = hashFunctions.map(h => h._1.hash(data)).mkString("")
+    val hashKey = hashFunctions.map(h => h._2.hash(data)).mkString("")
     hashTables.filter(x => x._1._2 == hashKey).map(a => a._2)
   }
 
   /** creates hashValue for each hashTable.*/
   def hashValue(data: SparseVector): List[(Int, String)] =
-    hashFunctions.map(a => (a._2 % numHashTables, a._1.hash(data)))
+    hashFunctions.map(a => (a._1 % numHashTables, a._2.hash(data)))
       .groupBy(_._1)
       .map(x => (x._1, x._2.map(_._2).mkString(""))).toList
 
@@ -67,10 +68,23 @@ class LSHModel(val m: Int, val numHashFunc : Int, val numHashTables: Int)
     hashTables ++ newRDD
     this
   }
+  def addBlock (newData:RDD[(Long,SparseVector)]): LSHModel = {
+  val newRDD: RDD[((Int, String), Long)] =  newData.cache()
+      .map(v => (hashFunctions.map(h => (h._2.hash(v._2), h._1 % numHashTables)), v._1))
+      .map(x => x._1.map(a => ((a._2, x._2), a._1)))
+      .flatMap(a => a).groupByKey()
+      .map(x => ((x._1._1, x._2.mkString("")), x._1._2)).cache()
+    hashTables ++ newRDD
+    this
+  }
 
   /** remove sparse vector with vector Id: vId from the model. */
   def remove (vId: Long, sc: SparkContext): LSHModel = {
     hashTables =  hashTables.filter(x => x._2 != vId)
+    this
+  }
+  def remove (expiderObjects: org.apache.spark.broadcast.Broadcast[Set[Long]]): LSHModel = {
+    hashTables =  hashTables.filter(x =>expiderObjects.value.contains(x._2)==false)
     this
   }
 
@@ -101,19 +115,19 @@ object LSHModel {
       sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
 
       //save hash functions as (hashTableId, randomVector)
-       val textHasFunctions: RDD[String] =sc.parallelize(model.hashFunctions.map {
-        case(hasher,band)=>band+"-"+hasher.r.map{x=>if(x) '0' else '1'}.mkString("")
+      val textHasFunctions: RDD[String] =sc.parallelize(model.hashFunctions.map {
+        case(band,hasher)=>band+"-"+hasher.r.map{x=>if(x) '0' else '1'}.mkString("")
       })
 
 
       textHasFunctions .saveAsTextFile(Loader.hasherPath(path))
 
       //save data as (hashTableId#, hashValue, vectorId)
-      model.hashTables
-        .map(x => (x._1._1, x._1._2, x._2))
-        .map(_.productIterator.mkString(","))
-        .saveAsTextFile(Loader.dataPath(path))
-
+//      model.hashTables
+//        .map(x => (x._1._1, x._1._2, x._2))
+//        .map(_.productIterator.mkString(","))
+//        .saveAsTextFile(Loader.dataPath(path))
+      model.hashTables.saveAsObjectFile(Loader.dataPath(path))
     }
 
     def load(sc: SparkContext, path: String): LSHModel = {
@@ -122,18 +136,18 @@ object LSHModel {
       val (className, formatVersion, metadata) = Loader.loadMetadata(sc, path)
       assert(className == thisClassName)
       assert(formatVersion == thisFormatVersion)
-      val hashTables = sc.textFile(Loader.dataPath(path))
-        .map(x => x.split(","))
-        .map(x => ((x(0).toInt, x(1)), x(2).toLong))
+//      val hashTables = sc.textFile(Loader.dataPath(path))
+//        .map(x => x.split(","))
+//        .map(x => ((x(0).toInt, x(1)), x(2).toLong))
+      val hashTables=sc.objectFile[((Int,String),Long)] (Loader.dataPath(path))
+
+      //  val hashers=parts.map(x => (Hasher(x._2), x._1.toInt)).collect().toList
 
 
-    //  val hashers=parts.map(x => (Hasher(x._2), x._1.toInt)).collect().toList
-
-
-      val hashers = sc.textFile(Loader.hasherPath(path))
+      val hashers: Array[(Int, Hasher)] = sc.textFile(Loader.hasherPath(path))
         .map(a => a.split("-"))
-        .map(x => ( Hasher(x.apply(1)), x.head.toInt)).collect().toList
- // println(hashers.foreach(x=>println(x._1.r+"  band "+x._2)))
+        .map(x => ( x.head.toInt,Hasher(x.apply(1)))).collect()
+      // println(hashers.foreach(x=>println(x._1.r+"  band "+x._2)))
       val numBands = hashTables.map(x => x._1._1).distinct.count()
       val numHashFunc = hashers.size / numBands
 
@@ -147,9 +161,8 @@ object LSHModel {
         s"hashValues in data does not match with hash functions")
 
       //create model
-      val model = new LSHModel(0, numHashFunc.toInt, numBands.toInt)
-     model.hashFunctions = hashers
-      model.hashTables = hashTables
+      val model = new LSHModel(0, numHashFunc.toInt, numBands.toInt,hashers,hashTables)
+
 
       model
     }
@@ -180,6 +193,7 @@ private[lsh] object Loader {
     val metadata = parse(sc.textFile(metadataPath(path)).first())
     val clazz = (metadata \ "class").extract[String]
     val version = (metadata \ "version").extract[String]
+
     (clazz, version, metadata)
   }
 

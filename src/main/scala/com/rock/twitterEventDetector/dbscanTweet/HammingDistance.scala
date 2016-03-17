@@ -160,7 +160,7 @@ object HammingDistance {
     val dicSize = Math.pow(2.0, 19).toInt
     val tfidf = generateTfIdfVectors(rdd, dicSize)
     val lsh = new LSH(tfidf, dicSize, numHashFunc  =30, numHashTables = 10)
-    val lshModel = lsh.run()
+    val lshModel = lsh.run(sc)
     tfidf.collect().foreach(println)
     val cosineSim = tfidf.cartesian(tfidf)
 

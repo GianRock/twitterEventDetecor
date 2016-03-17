@@ -28,7 +28,7 @@ class Hasher(val r: Vector[Boolean]) extends Serializable {
 
 }
 
-object Hasher {
+object Hasher extends Serializable{
 
   def fromString(stringSerialized: String): Vector[Boolean] ={
     //println(stringSerialized)
@@ -59,7 +59,7 @@ object Hasher {
 
 
 }
-
+/*
 class BitSetHasher(val r: BitSet) extends Serializable {
   /** hash SparseVector v with random vector r */
   def hash(u : SparseVector) : Int = {
@@ -162,4 +162,4 @@ object VectorHasher{
 
   }
 
-}
+}*/

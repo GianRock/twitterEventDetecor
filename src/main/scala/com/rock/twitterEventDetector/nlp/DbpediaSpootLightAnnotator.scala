@@ -31,6 +31,9 @@ class DbpediaSpootLightAnnotator extends  Serializable{
   val TYPE_WHEN=Set("")
 
   val UNWANTED_DBPEDIA_URLS:Set[String]=Set(
+    "http://dbpedia.org/resource/Instagram",
+    "http://dbpedia.org/resource/Tumblr",
+    "http://dbpedia.org/resource/Facebook",
     "http://dbpedia.org/resource/Google",
     "http://dbpedia.org/resource/Twitter",
     "http://dbpedia.org/resource/World",
@@ -40,10 +43,13 @@ class DbpediaSpootLightAnnotator extends  Serializable{
     "http://dbpedia.org/resource/Update_(SQL)",
     "http://dbpedia.org/resource/Video",
     "http://dbpedia.org/resource/Music",
-    "http://dbpedia.org/resource/Adobe_Premiere_Pro"
+    "http://dbpedia.org/resource/Adobe_Premiere_Pro",
+    "http://dbpedia.org/resource/Today_(U.S._TV_program)",
+    "http://dbpedia.org/resource/Microsoft_Windows",
+    "http://dbpedia.org/resource/WhatsApp"
   )
-  val STOP_SURFACES:Set[String]=Set("SURPRISE","YOUTUBE","VIMEO","TWITTER","DAY","THURSDAY","SURPRISE", "OURSELVES")
-
+  val STOP_SURFACES:Set[String]=Set("SURPRISE","YOUTUBE","VIMEO","TWITTER","DAY","THURSDAY","SURPRISE", "OURSELVES","FACEBOOK","TODAY",
+    "TONIGHT")
   /**
     * url Del server su cui è installato dbpedia spootlight
     */

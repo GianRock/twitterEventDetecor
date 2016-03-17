@@ -71,6 +71,35 @@ object TweetCollection {
     else None
 
   }
+  /**
+    *
+    * @param idTweet
+    * @return
+    */
+  def findRelevantTweetById(idTweet: Long): Option[Long] = {
+    val res =MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME)("relevantTweets").findOne(MongoDBObject("_id" -> idTweet))
+    println(res)
+    res match{
+      case None=>None
+      case Some(x)=>x.getAs[Long]("value")
+    }
+
+  }
+
+  /**
+    *
+    * @param idTweet
+    * @return
+    */
+  def checkRelevant(idTweet: Long): Boolean = {
+    val res =MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME)("relevantTweets").count(MongoDBObject("_id" -> idTweet))
+     if (res >0) {
+     true
+
+    }
+    else false
+
+  }
 
   def countTweetsInTimeInterval(timeStart: Date, timeEnd: Date): String = {
     val collection = MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME).getCollection(Constant.MONGO_TWEET_COLLECTION_NAME)
