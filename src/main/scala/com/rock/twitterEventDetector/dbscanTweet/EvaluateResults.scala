@@ -1,6 +1,8 @@
 package com.rock.twitterEventDetector.dbscanTweet
 
 import com.rock.twitterEventDetector.db.mongodb.TweetCollection
+import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
+import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkContext, SparkConf}
 
 /**
@@ -17,19 +19,52 @@ object EvaluateResults {
       .set("spark.executor.memory ", "14g")
       .set("spark.local.dir", "/tmp/spark-temp");
     val sc = new SparkContext(sparkConf)
-    val rddResults=sc.textFile("/home/rocco/IdeaProjects/resources/target/risClustering")
-   val results= rddResults.map(x=>x.replaceAll("[()]","").split(",")).map(array=>(array(2),array(0)))
-    val clust=results.groupByKey().filter(x=>x._2.size>10)
+    val rddResults: RDD[String] =sc.textFile("/home/rocco/clusterResults/clusterData_eps0.35_minPts10_b70_r13")
 
-   val clusteredCOllect= clust.collect()
-   val trueClusterdCount: Array[(String, (Iterable[String], Int))] =clusteredCOllect.map{
-     case(id,clusterdData)=>(id,(clusterdData,clusterdData.filter(x=>TweetCollection.checkRelevant(x.toLong)).size))
-   }.filter(x=>x._2._2>0)
+    println(rddResults.count())
 
-   val csas: Array[(String, Iterable[Long])] = trueClusterdCount.map{
-      case(idcluster,(clusters,count))=>
-        (idcluster, clusters.flatMap(x=>TweetCollection.findRelevantTweetById(x.toLong)))
-    }
-    csas.foreach(println)
+    val myResults: RDD[(Long, Long)] =rddResults.map{
+      x=>{ val g: Array[String] =x.split(",")
+        val cluster=g(1).toLong
+
+        (g(0).toLong,  if (cluster==(-2L))-1L else cluster)
+      }
+
+    }//.filter(x=>x._2.equals(-1L)==false)
+
+
+    val d= myResults.map(_.productIterator.mkString("\t")).coalesce(1)//.saveAsTextFile("results/reseps0.3515w")
+    rddResults.collect().foreach(println)
+    val  trueRes=SparkMongoIntegration.getRelevantTweets(sc)
+    println("TRUE RES"+trueRes.count())
+    trueRes.collect().foreach(println)
+
+
+    myResults.join(trueRes).map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResults/clusterData_eps0.35_minPts10_b70_r13OldHash")
+
+
+
+    //.map(_.productIterator.mkString("\t").coalesce(1).saveAsTextFile("results/risults")
+
+
+
+
+
+
+    /**
+      * val results= rddResults.map(x=>x.replaceAll("[()]","").split(",")).map(array=>(array(2),array(0)))
+      * val clust=results.groupByKey().filter(x=>x._2.size>10)
+
+      * val clusteredCOllect= clust.collect()
+      * val trueClusterdCount: Array[(String, (Iterable[String], Int))] =clusteredCOllect.map{
+      * case(id,clusterdData)=>(id,(clusterdData,clusterdData.filter(x=>TweetCollection.checkRelevant(x.toLong)).size))
+      * }.filter(x=>x._2._2>0)
+
+      * val csas: Array[(String, Iterable[Long])] = trueClusterdCount.map{
+      * case(idcluster,(clusters,count))=>
+      * (idcluster, clusters.flatMap(x=>TweetCollection.findRelevantTweetById(x.toLong)))
+      * }
+      * csas.foreach(println)
+      * }*/
   }
 }

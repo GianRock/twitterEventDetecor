@@ -4,6 +4,7 @@ import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.mongodb.hadoop.MongoInputFormat
 import com.rock.twitterEventDetector.configuration.Constant
+import com.rock.twitterEventDetector.db.mongodb.TweetCollection
 import com.rock.twitterEventDetector.model.Tweets.Tweet
 import com.rock.twitterEventDetector.utils.ProprietiesConfig._
 import org.apache.hadoop.conf.Configuration
@@ -40,6 +41,9 @@ object SparkMongoIntegration {
 
     val splittedHashTags = if (tweetBson.containsField("splitted_hashtags")) Some(tweetBson.get("splitted_hashtags").asInstanceOf[String]) else None
 
+
+
+    val cluster=if(tweetBson.containsField("cluster")) tweetBson.get("cluster").asInstanceOf[Long]  else -2L
     val tweet=new Tweet(id.asInstanceOf[Long],tweetBson.get("cleaned_text").toString,tweetBson.get("created_at").asInstanceOf[Date],hashTagsValues,splittedHashTags)
     (id.asInstanceOf[Long],tweet)
 
@@ -54,6 +58,7 @@ object SparkMongoIntegration {
     * questo metodo
     * a partire da una collection di tweets
     * crea un pair Rdd composto da idTweet,TweetObject
+    *
     * @param sc
     * @param query
     * @param collectionName
@@ -95,6 +100,51 @@ object SparkMongoIntegration {
 
 
 
+  /**
+    * questo metodo
+    * a partire da una collection di tweets
+    * crea un pair Rdd composto da idTweet,TweetObject
+    *
+    * @param sc
+    * @param query
+
+    * @return
+    */
+  def getRelevantTweets(sc:SparkContext,query:Option[Document]=None):RDD[(Long, Long)]={
+
+    val collectionName:String="relevantTweets"
+
+    val mongoUri=if(auth){
+      "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/"+ tweetdb+"."+collectionName+"?authSource="+authdb
+    }else{
+      "mongodb://"+host+":27017/"+ tweetdb+"."+collectionName
+    }
+
+    val mongoConfig = new Configuration()
+    //val mongoUri="mongodb://"+Constant.MONGO_DB_USER+":"+"sparkmongo"+"@"+Constant.MONGO_URL+":27017/"+ Constant.MONGO_DB_NAME+"." + Constant.MONGO_TWEET_COLLECTION_NAME+"?authSource=admin"
+
+    mongoConfig.set("mongo.input.uri",mongoUri)
+    if(query.isDefined)
+      mongoConfig.set("mongo.input.query", query.get.toJson)
+    //  mongoConfig.set("mongo.input.split.create_input_splits", "" + createSplits)
+    //mongoConfig.set("mongo.input.split.use_range_queries",""+true)
+    val documents = sc.newAPIHadoopRDD(
+      mongoConfig,                // Configuration
+      classOf[MongoInputFormat],  // InputFormat
+      classOf[Object],            // Key type
+      classOf[BSONObject])        // Value type
+    val relevanceJudgments=documents.map{
+        case(id:Object,obj:BSONObject)=>  (id.asInstanceOf[Long],obj.get("value").asInstanceOf[Long])
+      }
+
+
+
+    relevanceJudgments
+
+  }
+
+
+
 
 
 
@@ -110,19 +160,37 @@ object SparkMongoIntegration {
     */
   def getTweetsAsRDDInTimeInterval(sc:SparkContext,startDate: Date,endDate:Date,collectionName:String="tweets"):RDD[(Long,Tweet)]={
     val conditions:List[Document]=  List(
-     // new Document("annotated",new Document("$exists",false)),
-  //    new Document("annotated",new Document("$exists",false)),
+      // new Document("annotated",new Document("$exists",false)),
+      //    new Document("annotated",new Document("$exists",false)),
       new Document("created_at",new Document("$gte",startDate)) ,
       new Document("created_at",new Document("$lt", endDate)));
 
 
-     val query: Document = new Document("$and", conditions.toList.asJava)
-     getTweetsAsTupleRDD(sc,Some(query),collectionName,true)
+    val query: Document = new Document("$and", conditions.toList.asJava)
+    getTweetsAsTupleRDD(sc,Some(query),collectionName,true)
 
   }
 
-
   def main(args: Array[String]) {
+
+
+
+
+    val minDates=TweetCollection.findMinMaxValueDate()
+    val maxDates=new Date(minDates.getTime+(72*3600000))
+
+
+    val sparkConf = new SparkConf()
+      .setAppName("SparkMongoIntegration")
+      .setMaster("local[*]")
+    val sc = new SparkContext(sparkConf)
+
+    val tweets= getTweetsAsRDDInTimeInterval(sc, minDates,maxDates,"onlyRelevantTweets")
+
+    val releva=getRelevantTweets(sc)
+    val cluTweets=tweets.join(releva).map(x=>x._1+"\t"+x._2._1.text+"\t"+x._2._2).coalesce(1).saveAsTextFile("relevantCLusterTweets72h")
+  }
+  def main2(args: Array[String]) {
     val c1: Calendar = new GregorianCalendar
     val c2: Calendar = new GregorianCalendar
     c1.set(Calendar.YEAR, 2012)

@@ -15,7 +15,7 @@ import org.joda.time.{DateTime, Period}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 object TweetCollection {
-
+  val MONGO_DB_NAME="tweetEventDataset"
   /*s
   def generateCouplesFromListTailRecursive(lista:List[Long]):Set[(Long,Long)]={
 

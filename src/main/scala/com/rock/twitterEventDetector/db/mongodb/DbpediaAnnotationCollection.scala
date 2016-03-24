@@ -14,7 +14,7 @@ import org.apache.spark.rdd.RDD
   * Created by rocco on 03/02/2016.
   */
 object DbpediaAnnotationCollection {
-
+val MONGO_DB_NAME="tweetEventDataset"
   val db=MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
 
 

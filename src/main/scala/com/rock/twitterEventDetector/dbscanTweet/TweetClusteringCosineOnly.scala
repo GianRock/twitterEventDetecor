@@ -190,32 +190,72 @@ object TweetClusteringCosineOnly {
 
 
 
+  def clusterCartesian(sc: SparkContext,
+                       dataToCluster:RDD[(Long,Tweet)],
+                       minPts: Int,
+                       eps: Double,
+                       dicSizePow:Int=19)={
 
+    val dicSize=Math.pow(2,dicSizePow).toInt
 
-
-
-  def annotatateTweetRDDAndSaveResult( tweets:RDD[(VertexId, Tweet)])= {
-
-    tweets.cache()
-    val c= tweets.mapPartitions{
-      it => {
-        val annotator = new DbpediaSpootLightAnnotator
-        val anns: Iterator[(Long, List[DbpediaAnnotation])] = it.map {
-          case (idtweet, tweet) => {
-            val annotations = annotator.annotateText(tweet.text).getOrElse(List.empty[DbpediaAnnotation])
-            DbpediaAnnotationCollection.insertDbpediaAnnotationsOfTweet(idtweet,annotations)
-            (idtweet, annotations)
-          }
-        }
-        // .inserDbpediaAnnotationsBulk2(anns)
-        anns
-        // anns.size
-
-      }
+    val tfIdfVecs=generateTfIdfVectors(dataToCluster,dicSize)
+    val  candidatesNeighbors: RDD[(VertexId, VertexId)] =tfIdfVecs.cartesian(tfIdfVecs).map{
+      case(((ida,va),(idb,vb)))=>((ida,idb),1d-cosine(va,vb))
+    }.filter{
+      case(_,distance)=>distance<=eps
+    }.flatMap{
+      case((ida,idb),_)=>List((ida,idb),(idb,ida))
     }
-    println(c.count())
+    val zeroSetElem = collection.mutable.HashSet.empty[Long]
+
+    candidatesNeighbors.aggregateByKey(zeroSetElem)(
+      (set, id) => set+=id,
+      (set1, set2) => set1 ++ set2)
+      .filter{
+        case (_, set) => set.size>=minPts
+      }
+
+    val filteredneighList =  candidatesNeighbors
+      .aggregateByKey(zeroSetElem)(
+        (set, id) => set+=id,
+        (set1, set2) => set1 ++ set2)
+      .filter{
+        case (_, set) => set.size>=minPts
+      }.flatMap {
+      case (idCore, listNeighbor) => listNeighbor map ( neighbor => (idCore, neighbor))
+    }.persist(StorageLevel.DISK_ONLY)
+
+
+    val graph: Graph[Int, Int] = Graph.fromEdgeTuples(filteredneighList, 1,None,StorageLevel.MEMORY_AND_DISK)
+    val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices;
+
+
+    val clusteredData: RDD[(VertexId, VertexId)] =
+      dataToCluster.leftOuterJoin(connectedComponents)
+        .map{
+          case(objectId,(instance,Some(clusterId)))=>(objectId,clusterId)
+          case(objectId,(instance,None))=>(objectId,NOISE)
+        }
+
+
+    clusteredData
+
+
   }
 
+
+
+  def cosine(a: SparseVector, b: SparseVector): Double = {
+    var cosine=0.0
+
+    val intersection = a.indices.intersect(b.indices)
+    if(intersection.length>0){
+      val magnitudeA = a.indices.map(x => Math.pow(a.apply(x), 2)).sum
+      val magnitudeB = b.indices.map(x => Math.pow(b.apply(x), 2)).sum
+      cosine=intersection.map(x => a.apply(x) * b.apply(x)).sum / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB))
+    }
+    return  cosine
+  }
 
 
 
@@ -225,9 +265,10 @@ object TweetClusteringCosineOnly {
     * @param eps
     */
   def clusteringTweets(sc: SparkContext,
+                       dataToCluster:RDD[(Long,Tweet)],
                        lshModel: LSHModelWithData,
                        minPts: Int,
-                       eps: Double):VertexRDD[VertexId]  = {
+                       eps: Double): RDD[(VertexId, VertexId)] = {
 
 
     /**
@@ -236,7 +277,7 @@ object TweetClusteringCosineOnly {
     val zeroElem = collection.mutable.LinkedList.empty[(Long,SparseVector)]
 
     val groupedLSH: RDD[((Int, String), mutable.LinkedList[(Long, SparseVector)])] =lshModel.hashTables.aggregateByKey(zeroElem)(
-      (list: collection.mutable.LinkedList[(Long,SparseVector)], v:(Long,SparseVector)) => list.:+(v) ,
+      (list: collection.mutable.LinkedList[(Long,SparseVector)], v:(Long,SparseVector)) => list :+ v ,
       (list1, list2) => list1 ++ list2)
 
     groupedLSH.persist(StorageLevel.MEMORY_AND_DISK)
@@ -287,7 +328,16 @@ object TweetClusteringCosineOnly {
     val graph: Graph[Int, Int] = Graph.fromEdgeTuples(filteredneighList, 1,None,StorageLevel.MEMORY_AND_DISK)
     val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices;
 
-    connectedComponents
+
+    val clusteredData: RDD[(VertexId, VertexId)] =
+      dataToCluster.leftOuterJoin(connectedComponents)
+        .map{
+          case(objectId,(instance,Some(clusterId)))=>(objectId,clusterId)
+          case(objectId,(instance,None))=>(objectId,NOISE)
+        }
+
+
+    clusteredData
 
 
 
@@ -300,89 +350,76 @@ object TweetClusteringCosineOnly {
 
 
 
-  def exacteCosine(a:SparseVector,b:SparseVector):Double={
-    1-math.acos(cosine(a,b))/math.Pi
-  }
-
-
-  def cosine(a: SparseVector, b: SparseVector): Double = {
-    var cosine=0.0
-
-    val intersection = a.indices.intersect(b.indices)
-    if(intersection.length>0){
-      val magnitudeA = a.indices.map(x => Math.pow(a.apply(x), 2)).sum
-      val magnitudeB = b.indices.map(x => Math.pow(b.apply(x), 2)).sum
-      cosine=intersection.map(x => a.apply(x) * b.apply(x)).sum / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB))
-    }
-    return  cosine
-  }
-
-
-  def evaluateLSHModel(lshModel:LSHModel,data: RDD[(VertexId, SparseVector)]): (Double, Double, Double, Double) ={
-
-
-    /**
-      *a partire dal modello lsh
-      * creo un indexed rdd che ad ogni id documento
-      * associa un interable di coppie (banda,signature)
-      */
-    val invertedLsh: RDD[(VertexId, String)] =lshModel.hashTables.map{
-      case(hashkey,id)=>(id,hashkey)
-    }.groupByKey().map{
-      case(id,listHash:Iterable[(Int,String)])=>{
-        val sortedHashes: List[(Int, String)] =listHash.toList.sortBy(_._1)
-        val signature= sortedHashes.foldLeft("")((b,a) => b+a)
-        //val boolanSig: IndexedSeq[Boolean] =signature.map(x=>if (x=='0') false else true)
-
-        (id,signature)
-        //  val c=sortedHashes.foldRight()
-      }
-    }
-    // implicit val serializer=new Tuple2Serializer[Int,String]
-    // implicit val serializer2=new Tuple2Serializer[Long,Iterable[(Int,String)]]
-
-    val indexedInvertedLsh: IndexedRDD[VertexId, String] = IndexedRDD(invertedLsh).cache()
-
-    // Calculate a sum of set bits of XOR'ed bytes
-    def hammingDistance(b1:String, b2: String):Double = {
-      ((b1 zip b2) count ( x => x._1 != x._2 )).toDouble/b1.length.toDouble
-    }
 
 
 
-
-
-    val cosineSim=data.cartesian(data).filter{
-      case((id1,_),(id2,_))=>id1<id2
-    }.map {
-      case ((id1, v1), (id2, v2)) => {
-        //val cosineSim=cosine(v1,v2)
-        //if(cosineSim>0.0) Some((id1,id2,1-cosineSim))
-        // else None
-        (id1,id2,exacteCosine(v1,v2))
-
-      }
-    }.collect()
-    val errors=cosineSim.map{
-      case(ida,idb,cosineDistance)=>{
-        val signatureA =indexedInvertedLsh.get(ida).get
-        val signatureB=indexedInvertedLsh.get(idb).get
-        val hamm=hammingDistance(signatureA,signatureB)
-        val approximateCosine: Double =hammingDistance( signatureA,signatureB)
-        val error=math.abs((cosineDistance-approximateCosine))/cosineDistance
-        println ((ida,idb)+ "COSINE DISTANCE "+cosineDistance+ " approx "+approximateCosine+" ERROR :"+error)
-        error
-      }
-    }
-
-
-    val avg=errors.reduce(_+_)/errors.length
-    val dev=Math.sqrt(errors.map(x=>Math.pow(x-avg,2d)).reduce(_+_)/errors.length)
-    println(" AVG ERROR  "+ avg + " MAX ERROR "+errors.max+" STD DEV "+dev)
-
-    (avg,errors.min,errors.max,dev)
-    //cosineSim.foreach(println)
-  }
+//
+//
+//  def evaluateLSHModel(lshModel:LSHModel,data: RDD[(VertexId, SparseVector)]): (Double, Double, Double, Double) ={
+//
+//
+//    /**
+//      *a partire dal modello lsh
+//      * creo un indexed rdd che ad ogni id documento
+//      * associa un interable di coppie (banda,signature)
+//      */
+//    val invertedLsh: RDD[(VertexId, String)] =lshModel.hashTables.map{
+//      case(hashkey,id)=>(id,hashkey)
+//    }.groupByKey().map{
+//      case(id,listHash:Iterable[(Int,String)])=>{
+//        val sortedHashes: List[(Int, String)] =listHash.toList.sortBy(_._1)
+//        val signature= sortedHashes.foldLeft("")((b,a) => b+a)
+//        //val boolanSig: IndexedSeq[Boolean] =signature.map(x=>if (x=='0') false else true)
+//
+//        (id,signature)
+//        //  val c=sortedHashes.foldRight()
+//      }
+//    }
+//    // implicit val serializer=new Tuple2Serializer[Int,String]
+//    // implicit val serializer2=new Tuple2Serializer[Long,Iterable[(Int,String)]]
+//
+//    val indexedInvertedLsh: IndexedRDD[VertexId, String] = IndexedRDD(invertedLsh).cache()
+//
+//    // Calculate a sum of set bits of XOR'ed bytes
+//    def hammingDistance(b1:String, b2: String):Double = {
+//      ((b1 zip b2) count ( x => x._1 != x._2 )).toDouble/b1.length.toDouble
+//    }
+//
+//
+//
+//
+//
+//    val cosineSim=data.cartesian(data).filter{
+//      case((id1,_),(id2,_))=>id1<id2
+//    }.map {
+//      case ((id1, v1), (id2, v2)) => {
+//        //val cosineSim=cosine(v1,v2)
+//        //if(cosineSim>0.0) Some((id1,id2,1-cosineSim))
+//        // else None
+//        (id1,id2,exacteCosine(v1,v2))
+//
+//      }
+//    }.collect()
+//    val errors=cosineSim.map{
+//      case(ida,idb,cosineDistance)=>{
+//        val signatureA =indexedInvertedLsh.get(ida).get
+//        val signatureB=indexedInvertedLsh.get(idb).get
+//        val hamm=hammingDistance(signatureA,signatureB)
+//        val approximateCosine: Double =hammingDistance( signatureA,signatureB)
+//        val error=math.abs((cosineDistance-approximateCosine))/cosineDistance
+//        println ((ida,idb)+ "COSINE DISTANCE "+cosineDistance+ " approx "+approximateCosine+" ERROR :"+error)
+//        error
+//      }
+//    }
+//
+//
+//    val avg=errors.reduce(_+_)/errors.length
+//    val dev=Math.sqrt(errors.map(x=>Math.pow(x-avg,2d)).reduce(_+_)/errors.length)
+//    println(" AVG ERROR  "+ avg + " MAX ERROR "+errors.max+" STD DEV "+dev)
+//
+//    (avg,errors.min,errors.max,dev)
+//    //cosineSim.foreach(println)
+//  }
 
 
 
@@ -446,17 +483,10 @@ object TweetClusteringCosineOnly {
     //val lshModel: LSHModel= LSHModel.load(sc, "target/relevantTweetsLSH")
 
     println("finished loading lsh model")
-    val connectedComponents: VertexRDD[VertexId] =clusteringTweets(sc,lshModel,50,0.35)
-    val clusteredData: RDD[(VertexId, VertexId)] =
-      relevantTweets.leftOuterJoin(connectedComponents)
-        .map{
-          case(objectId,(instance,Some(clusterId)))=>(clusterId,objectId)
-          case(objectId,(instance,None))=>(NOISE,objectId)
-        }
-    //clusteredData.saveAsTextFile("target/relevantTweetsClustered")
+    val clusteredData=clusteringTweets(sc,relevantTweets,lshModel,50,0.35)
+
     clusteredData.groupByKey().map(x=>(x._1,x._2.size)).collect().foreach(println)
 
   }
 
 }
-

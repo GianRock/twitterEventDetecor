@@ -32,7 +32,7 @@ public class Constant {
 
 	//public static final String MONGO_URL="127.0.0.1";
 	 */
-	//public static final String MONGO_DB_NAME="tweetEventDataset";
+	 public static final String MONGO_DB_NAME="tweetEventDataset";
 	//public static final String MONGO_DB_USER="usr";
 	//static final String MONGO_DB_AUTH_DB="admin";
 	public static final String MONGO_DB_NAME_TWEETDATASET="tweetEventDataset";
