@@ -2,4 +2,4 @@
 /project
 /target
 /hs_err*
-
+/src/main/resources/config.properties
