@@ -6,34 +6,30 @@ package com.rock.twitterEventDetector.dbscanTweet
 
 import java.util.Date
 
+import com.rock.twitterEventDetector.db.mongodb.TweetCollection
 import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
-import com.rock.twitterEventDetector.db.mongodb.{DbpediaAnnotationCollection, TweetCollection}
 import com.rock.twitterEventDetector.dbscanTweet.Distances._
-import com.rock.twitterEventDetector.lsh.{LSHWithData, LSHModelWithData, LSH, LSHModel}
-import com.rock.twitterEventDetector.model.Model._
-import com.rock.twitterEventDetector.model.Tweets.{VectorTweet, AnnotatedTweet, AnnotatedTweetWithDbpediaResources, Tweet}
-import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
+import com.rock.twitterEventDetector.lsh.{LSHModel, LSHModelWithData, LSHWithData}
+import com.rock.twitterEventDetector.model.Tweets.{Tweet, VectorTweet}
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
+import com.rock.twitterEventDetector.utils.UtilsFunctions._
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD._
 import org.apache.spark.graphx.{Graph, VertexId, VertexRDD}
+import org.apache.spark.mllib.clustering.KMeans
 import org.apache.spark.mllib.feature.{HashingTF, IDF, Normalizer}
 import org.apache.spark.mllib.linalg.{SparseVector, Vector}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
-import scala.collection.immutable.IndexedSeq
-import com.rock.twitterEventDetector.utils.UtilsFunctions._
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
   * Created by rocco on 26/01/2016.
   */
-object TweetClusteringCosineOnly {
+object TweetClusteringDisribuited {
 
   val NOISE: VertexId =(-2l)
 
@@ -190,58 +186,7 @@ object TweetClusteringCosineOnly {
 
 
 
-  def clusterCartesian(sc: SparkContext,
-                       dataToCluster:RDD[(Long,Tweet)],
-                       minPts: Int,
-                       eps: Double,
-                       dicSizePow:Int=19)={
 
-  val dicSize=Math.pow(2,dicSizePow).toInt
-
-    val tfIdfVecs=generateTfIdfVectors(dataToCluster,dicSize)
-   val  candidatesNeighbors: RDD[(VertexId, VertexId)] =tfIdfVecs.cartesian(tfIdfVecs).map{
-      case(((ida,va),(idb,vb)))=>((ida,idb),1d-cosine(va,vb))
-    }.filter{
-      case(_,distance)=>distance<=eps
-    }.flatMap{
-      case((ida,idb),_)=>List((ida,idb),(idb,ida))
-    }
-    val zeroSetElem = collection.mutable.HashSet.empty[Long]
-
-    candidatesNeighbors.aggregateByKey(zeroSetElem)(
-      (set, id) => set+=id,
-      (set1, set2) => set1 ++ set2)
-      .filter{
-        case (_, set) => set.size>=minPts
-      }
-
-    val filteredneighList =  candidatesNeighbors
-      .aggregateByKey(zeroSetElem)(
-        (set, id) => set+=id,
-        (set1, set2) => set1 ++ set2)
-      .filter{
-        case (_, set) => set.size>=minPts
-      }.flatMap {
-      case (idCore, listNeighbor) => listNeighbor map ( neighbor => (idCore, neighbor))
-    }.persist(StorageLevel.DISK_ONLY)
-
-
-    val graph: Graph[Int, Int] = Graph.fromEdgeTuples(filteredneighList, 1,None,StorageLevel.MEMORY_AND_DISK)
-    val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices;
-
-
-    val clusteredData: RDD[(VertexId, VertexId)] =
-      dataToCluster.leftOuterJoin(connectedComponents)
-        .map{
-          case(objectId,(instance,Some(clusterId)))=>(objectId,clusterId)
-          case(objectId,(instance,None))=>(objectId,NOISE)
-        }
-
-
-    clusteredData
-
-
-  }
 
 
 
@@ -322,8 +267,8 @@ object TweetClusteringCosineOnly {
     val clusteredData: RDD[(VertexId, VertexId)] =
       dataToCluster.leftOuterJoin(connectedComponents)
         .map{
-          case(objectId,(instance,Some(clusterId)))=>(objectId,clusterId)
-          case(objectId,(instance,None))=>(objectId,NOISE)
+          case(objectId,(instance,Some(clusterId)))=>(clusterId,objectId)
+          case(objectId,(instance,None))=>(NOISE,objectId)
         }
 
 

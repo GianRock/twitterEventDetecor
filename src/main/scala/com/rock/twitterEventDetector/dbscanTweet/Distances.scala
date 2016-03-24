@@ -52,6 +52,17 @@ object Distances {
   }
 
 
+  def cosine(a: SparseVector, b: SparseVector): Double = {
+    var cosine=0.0
+
+    val intersection = a.indices.intersect(b.indices)
+    if(intersection.length>0){
+      val magnitudeA = a.indices.map(x => Math.pow(a.apply(x), 2)).sum
+      val magnitudeB = b.indices.map(x => Math.pow(b.apply(x), 2)).sum
+      cosine=intersection.map(x => a.apply(x) * b.apply(x)).sum / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB))
+    }
+    return  cosine
+  }
   /**
     * evaluate the similarity between two sets of dbpedia Resources,
     * if one of the sets is empty will return the max similarity
@@ -67,7 +78,9 @@ object Distances {
     semanticSim
   }
 
-
+  def exacteCosine(a:SparseVector,b:SparseVector):Double={
+    1-math.acos(cosine(a,b))/math.Pi
+  }
 
 
 

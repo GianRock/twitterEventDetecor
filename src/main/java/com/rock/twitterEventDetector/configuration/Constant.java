@@ -29,12 +29,14 @@ public class Constant {
 	
 	/**
 	 * DB CONFIGGS
-
+*/
 	//public static final String MONGO_URL="127.0.0.1";
-	 */
-	//public static final String MONGO_DB_NAME="tweetEventDataset";
-	//public static final String MONGO_DB_USER="usr";
-	//static final String MONGO_DB_AUTH_DB="admin";
+	public static final String MONGO_URL_SERVER="193.204.187.132";
+
+	public static final String MONGO_DB_NAME="tweetEventDataset";
+	public static final String MONGO_DB_USER="kdde";
+	public static final String MONGO_DB_PSW="sparkmongo";
+	public static final String MONGO_DB_AUTH_DB="admin";
 	public static final String MONGO_DB_NAME_TWEETDATASET="tweetEventDataset";
 	public static final String MONGO_TWEET_COLLECTION_NAME="tweets";
 

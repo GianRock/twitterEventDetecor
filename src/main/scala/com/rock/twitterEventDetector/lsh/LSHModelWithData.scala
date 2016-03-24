@@ -26,7 +26,10 @@ import org.json4s.jackson.JsonMethods._
   * @param numHashTables number of hashTables.
   *
   * */
-class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int,val hashFunctions: Seq[(Int,Hasher)], var hashTables: RDD[((Int, String), (Long,SparseVector))])
+class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int,val hashFunctions: Seq[(Int,Hasher)],
+                       var hashTables: RDD[((Int, String), (Long,SparseVector))])
+
+
   extends Serializable with Saveable {
 
 

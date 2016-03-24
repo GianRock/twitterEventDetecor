@@ -4,6 +4,7 @@ import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.{AnnotatedTweet, Tweet}
 import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
+import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.mllib.feature.{Normalizer, IDF, HashingTF}
 import org.apache.spark.mllib.linalg.{Vector, SparseVector}
 import org.apache.spark.rdd.RDD
@@ -116,5 +117,32 @@ object SparkNlpOps {
     val annotatedTweet = tfVectors.map (tuple =>
       (tuple._1,  new AnnotatedTweet(tuple._2 ,idf.transform(tuple._3).toSparse,tuple._4)))
     annotatedTweet
+  }
+
+
+
+  def main(args: Array[String]) {
+    val conf = new SparkConf()
+      .setAppName("LSH")
+      .setMaster("local[*]")
+      .set("spark.executor.memory ", "2g")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+    conf.registerKryoClasses(Array(classOf[com.rock.twitterEventDetector.lsh.Hasher], classOf[Tweet]))
+
+
+    val sc = new SparkContext(conf)
+
+
+    val g=(1 to 1000).map(x=>(x-1,x+1)).toList
+   // sc.parallelize(g).map(_.productIterator.mkString(",")).saveAsTextFile("prova2")
+
+    val clusters=sc.textFile("./results/clusterData")
+    val clusteredData=clusters.map{x=>
+      val parts=x.split(",")
+      (parts(0),parts(1))
+    }.groupByKey()
+    clusteredData.mapValues(x=>x.size).collect().foreach(println)
+    println(clusteredData.count())
+
   }
 }

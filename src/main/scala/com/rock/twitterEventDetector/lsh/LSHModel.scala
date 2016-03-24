@@ -115,18 +115,20 @@ object LSHModel {
       sc.parallelize(Seq(metadata), 1).saveAsTextFile(Loader.metadataPath(path))
 
       //save hash functions as (hashTableId, randomVector)
+     /*
       val textHasFunctions: RDD[String] =sc.parallelize(model.hashFunctions.map {
         case(band,hasher)=>band+"-"+hasher.r.map{x=>if(x) '0' else '1'}.mkString("")
       })
 
 
-      textHasFunctions .saveAsTextFile(Loader.hasherPath(path))
+      textHasFunctions .saveAsTextFile(Loader.hasherPath(path))*/
 
       //save data as (hashTableId#, hashValue, vectorId)
 //      model.hashTables
 //        .map(x => (x._1._1, x._1._2, x._2))
 //        .map(_.productIterator.mkString(","))
-//        .saveAsTextFile(Loader.dataPath(path))
+//        .saveAsTextFile(Loader.dataPath(path))mo
+      sc.parallelize(model.hashFunctions).saveAsObjectFile(Loader.hasherPath(path))
       model.hashTables.saveAsObjectFile(Loader.dataPath(path))
     }
 
@@ -144,19 +146,23 @@ object LSHModel {
       //  val hashers=parts.map(x => (Hasher(x._2), x._1.toInt)).collect().toList
 
 
-      val hashers: Array[(Int, Hasher)] = sc.textFile(Loader.hasherPath(path))
+       val hashers  =sc.objectFile[((Int,Hasher))] (Loader.hasherPath(path)).collect()
+
+      /*
+      Array[(Int, Hasher)] = sc.textFile(Loader.hasherPath(path))
         .map(a => a.split("-"))
-        .map(x => ( x.head.toInt,Hasher(x.apply(1)))).collect()
+        .map(x => ( x.head.toInt,Hasher(x.apply(1)))).collect()*/
       // println(hashers.foreach(x=>println(x._1.r+"  band "+x._2)))
       val numBands = hashTables.map(x => x._1._1).distinct.count()
-      val numHashFunc = hashers.size / numBands
+     // val numHashFunc = hashers.size / numBands
 
       //Validate loaded data
       //check size of data
       assert(hashTables.count != 0, s"Loaded hashTable data is empty")
       //check size of hash functions
-      assert(hashers.size != 0, s"Loaded hasher data is empty")
+      //assert(hashers.size != 0, s"Loaded hasher data is empty")
       //check hashValue size. Should be equal to numHashFunc
+      val numHashFunc=1
       assert(hashTables.map(x => x._1._2).filter(x => x.size != numHashFunc).collect().size == 0,
         s"hashValues in data does not match with hash functions")
 

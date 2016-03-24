@@ -16,13 +16,14 @@ import org.joda.time.DateTime
   * Created by rocco on 01/03/16.
   */
 object Main extends App{
-  val maxMemory=             Try(args(0)).getOrElse("10g")
+  val maxMemory=             Try(args(0)).getOrElse("12g")
   val numRows              = Try(args(1)).getOrElse("14").toInt
   val numBands             = Try(args(2)).getOrElse("60").toInt
-  val minDate=DateTime.parse(Try(args(3)).getOrElse("2011-10-10T14:00:00.000+01:00"))
-  val maxDate=DateTime.parse(Try(args(4)).getOrElse("2013-10-11T14:00:00.000+01:00"))
+  val minDate=DateTime.parse(Try(args(30)).getOrElse("2011-10-10T14:00:00.000+01:00"))
+  val maxDate=DateTime.parse(Try(args(31)).getOrElse("2013-10-11T14:00:00.000+01:00"))
   val dicPow               = Try(args(5)).getOrElse("19").toInt
-  val resultFilePath       = Try(args(5)).getOrElse("./results/")
+
+  val resultFilePath       = Try(args(6)).getOrElse("./results/")
 
 
 
@@ -34,6 +35,8 @@ object Main extends App{
     .setMaster("local[*]")
     .set("spark.executor.memory ", maxMemory)
     .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+   conf.registerKryoClasses(Array(classOf[com.rock.twitterEventDetector.lsh.Hasher], classOf[Tweet]))
+
 
   val sc = new SparkContext(conf)
 
@@ -44,17 +47,26 @@ object Main extends App{
 
   val dicSize = Math.pow(2.0, dicPow).toInt
 
-  val path="./results/relevanLshModelWithData"+numRows+"_b"+numBands
+  val path="target/relevantLshModelWithData_r"+numRows+"_b"+numBands
   val tfidfVectors = TweetClusteringCosineOnly.generateTfIdfVectors(tweets, dicSize)
-   val lsh = new LSHWithData(tfidfVectors, dicSize, numHashFunc=numRows, numHashTables = numBands)
+ //  val lsh = new LSHWithData(tfidfVectors, dicSize, numHashFunc=numRows, numHashTables = numBands)
   val currentTime=System.currentTimeMillis()
-
-  val lshModel=lsh.run(sc)
+  val lshModel =  LSHModelWithData.load(sc,path)
+ // val lshModel=lsh.run(sc)
   val endTime=System.currentTimeMillis()
   val exTime=endTime-currentTime
   println("TEMPO GENERAZIONE LSH MODEL "+exTime)
 
-  lshModel.save(sc,path)
+
+  val startTimeClustering=System.currentTimeMillis()
+  val clusteredData=TweetClusteringCosineOnly.clusteringTweets(sc,tweets,lshModel,10,0.35)
+  val endTimeCLustering=System.currentTimeMillis()
+
+  val timeCluseringex=endTimeCLustering-startTimeClustering
+  println("TEMPO CLUSTERING "+timeCluseringex)
+  clusteredData.map(_.productIterator.mkString(",")).saveAsTextFile(resultFilePath+"/clusterData")
+
+  //shModel.save(sc,path)
 
  /*
   val lshModel =  LSHModelWithData.load(sc,path) //lsh.run(sc) //LSHModelWithData.load(sc,path)

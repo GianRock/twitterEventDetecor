@@ -1,8 +1,10 @@
 package com.rock.twitterEventDetector.db.mongodb
 
-import java.util.Date
+import java.text.SimpleDateFormat
+import java.util.{Arrays, Date}
 import java.util.concurrent.Executors
 
+import com.mongodb
 import com.mongodb.casbah.Imports._
 import com.mongodb.casbah.commons.MongoDBObject
 import com.rock.twitterEventDetector.configuration.Constant
@@ -10,6 +12,8 @@ import com.rock.twitterEventDetector.model.Model.DbpediaAnnotation
 import com.rock.twitterEventDetector.model.Tweets.Tweet
  import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
 import com.rock.twitterEventDetector.utils.ProprietiesConfig._
+
+import org.bson.Document
 import org.joda.time.{DateTime, Period}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -167,8 +171,64 @@ object TweetCollection {
 
   }
 
+  def dayStats(year: Int, month: Int) {
+    val tweetsCollection = MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME)("tweets")
+
+   val project= MongoDBObject("$project" ->
+      MongoDBObject("year" -> MongoDBObject("$year"-> "$created_at"),
+                    "month"-> MongoDBObject("$month"->"$created_at"),
+                    "day"  -> MongoDBObject("$dayOfMonth"->"$created_at")
+
+      )
+    )
+    val matchStage=MongoDBObject("$match"->MongoDBObject("year"->year,"month"->month))
+  val group=MongoDBObject("$group"->MongoDBObject("_id"-> MongoDBObject(("year"->"$year"),("month"->"$month"),("day"->"$day")),
+    "count"->MongoDBObject("$sum"->1)
+
+  ))
+
+    val sort=MongoDBObject("$sort"->MongoDBObject("_id.day"->(1)))
+
+    val pipeLine = List(project,matchStage,group,sort)
+
+    println(pipeLine)
+
+     val iterator = tweetsCollection.aggregate(pipeLine)
 
 
+
+  }
+
+
+  def clusterInfo() {
+    val tweetsCollection = MongoCLientSingleton.myMongoClient(Constant.MONGO_DB_NAME)("relevantTweets")
+//{$group: {'_id': '$value','count' : {'$sum':1},'minTime':{'$min':'$created_at'},'maxTime':{'$max':'$created_at'}}} ])
+    val group=MongoDBObject("$group"->MongoDBObject("_id"-> "$value",
+                                                    "count"-> MongoDBObject("$sum"->1),
+                                                    "minTime"-> MongoDBObject("$min"->"$created_at"),
+                                                    "maxTime"-> MongoDBObject("$max"->"$created_at")
+                            ))
+
+    val sort=MongoDBObject("$sort"->MongoDBObject("minTime"->(1)))
+    val pipeLine = List(group,sort)
+
+    println(pipeLine)
+
+    val iterator = tweetsCollection.aggregate(pipeLine)
+    val formatter = new SimpleDateFormat("dd/MM/yy hh:mm");
+    for (result <- iterator.results){
+
+      val minDate=result.getAs[Date]("minTime").get
+      val maxDate=result.getAs[Date]("maxTime").get
+      val numberOfHour=math.ceil((maxDate.getTime-minDate.getTime).toDouble/3600000.toDouble)
+     // println( result.toString+" NUMBER OF HOURS "+numberOfHour)
+
+      println(result.get("_id")+"\t"+result.get("count")+"\t"+formatter.format(result.get("minTime"))+"\t"+formatter.format(result.get("maxTime"))+"\t"+numberOfHour.toInt)
+
+    }
+
+
+  }
 
 
 
@@ -179,7 +239,7 @@ object TweetCollection {
     * @param step
     * @return
     */
-  def dateRangeString(from: DateTime, to: DateTime, step: Period)
+  def dateRangeString(from: DateTime, to: DateTime, step: Period,windowsSize:Period)
   = {
     val list = Iterator.iterate(from)(_.plus(step)).takeWhile(!_.isAfter(to)).toList
 
@@ -188,9 +248,14 @@ object TweetCollection {
     else
       list
 
-    //finalList.sliding(2,1).toList.map(x=>(x.head,x.tail.head))
-    finalList.sliding(2, 1).toList.map(x => (x.mkString(" ")))
 
+    val windows=finalList.map(x=>(x,x.plus(windowsSize))).takeWhile(x=>x._2.isBefore(to))
+    val finalWindows: List[(DateTime, DateTime)] = if (windows.last._2.isBefore(to)) windows :+ (windows.last._2,to)
+    else windows
+
+    //finalList.sliding(2,1).toList.map(x=>(x.head,x.tail.head))
+   finalList.sliding(2,1).toList.map(x => (x.mkString(" ")))
+    finalWindows.map(x => (x._1+" "+x._2))
   }
 
 
@@ -214,8 +279,24 @@ object TweetCollection {
 
   }
 
-
   def main(args: Array[String]) {
+
+
+
+    val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCosineOnly 60g  onlyRelevantTweets 20 60 19 ./results/lshM true 0.4 10 "
+
+    val start=DateTime.parse("2012-10-13T03:00:00.000+02:00")
+
+    val startTime=TweetCollection.findMinMaxValueDate()
+    val endTime=TweetCollection.findMinMaxValueDate(false)
+    val from = new DateTime(startTime)
+    val to = new DateTime(endTime)
+    val itString=dateRangeString(from,to,Period.hours(6),Period.hours(72))
+    println("NUMBER OF HOUR "+itString.size)
+    itString.foreach(x=>println(call+" "+x +" >>clusouto.log"))
+  }
+
+  def main22(args: Array[String]) {
 
 
 
@@ -266,7 +347,7 @@ object TweetCollection {
 
     val from = new DateTime(minDateValue)
     val to = new DateTime(maxDateValue)
-   val itString=dateRangeString(from,to,Period.hours(6))
+   val itString=dateRangeString(from,to,Period.hours(6),Period.hours(72))
     println(itString.length)
 
    // val call:String="./bin/spark-submit   --class com.rock.twitterEventDetector.mongoSpark.MainAnnotator   --master local[*]   provaSpark-assembly-1.0.jar"

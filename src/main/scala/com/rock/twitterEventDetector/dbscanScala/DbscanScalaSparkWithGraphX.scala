@@ -28,6 +28,48 @@ class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], execu
     -2l
   }
 
+  /**
+    *
+    * @param sparkContext
+    * @param neighRDD
+    * @return
+    */
+  def construct(sparkContext: SparkContext,neighRDD:RDD[(Long,Long)])={
+    val zeroSetElem = collection.mutable.HashSet.empty[Long]
+
+
+    val coreVertexIds=neighRDD.aggregateByKey(zeroSetElem)(
+      (set, id) => set+=id,
+      (set1, set2) => set1 ++ set2)
+      .filter{
+        case (_, set) => set.size>=minPts
+      }.map(x=>x._1).collect().toSet
+
+
+
+    val broadCastIds=sparkContext.broadcast(coreVertexIds)
+
+    val coreSx=neighRDD.filter{
+      case(ida,idb)=>
+        broadCastIds.value.contains(ida)
+    }
+
+    val coreSxDX=coreSx.filter{
+      case(ida,idb)=>
+        broadCastIds.value.contains(idb)
+    }
+    val coreSxnonDX: RDD[(VertexId, VertexId)] =coreSx.filter{
+      case(ida,idb)=>
+        ! broadCastIds.value.contains(idb)
+    }.map{
+      case(idCore,idNonCore)=>(idNonCore,idCore)
+    }.groupByKey().map{x=>(x._2.toList.head,x._1)}
+
+
+    val realNeighs=coreSxDX.union(coreSxnonDX)
+    realNeighs
+  }
+
 
   def run(sparkContext: SparkContext): VertexRDD[VertexId] = {
 
@@ -40,9 +82,18 @@ class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], execu
       .flatMap{case ((idA,_), (idB,_))=> List((idA,idB), (idB, idA))}
 
     // val group: RDD[(Long, Iterable[Long])] = neighRDD.groupByKey();
-    val coreVertexIds=neighRDD.groupByKey()
 
-      .filter{ case(_,neighborhood)=>neighborhood.size>=minPts}.map(x=>x._1).collect().toSet
+    val zeroSetElem = collection.mutable.HashSet.empty[Long]
+
+
+    val coreVertexIds=neighRDD.aggregateByKey(zeroSetElem)(
+      (set, id) => set+=id,
+      (set1, set2) => set1 ++ set2)
+      .filter{
+        case (_, set) => set.size>=minPts
+      }.map(x=>x._1).collect().toSet
+
+
 
     val broadCastIds=sparkContext.broadcast(coreVertexIds)
 

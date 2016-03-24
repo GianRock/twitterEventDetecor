@@ -178,6 +178,28 @@ object DbpediaAnnotationCollection {
     )
 
   }
+
+
+
+  def updateRelevantTWeets()={
+    val db: MongoDB =MongoCLientSingleton.myMongoClient(MONGO_DB_NAME)
+
+    val collectionAnnotation=db("relevantTweets")
+    collectionAnnotation.par.foreach(x=>
+
+    {
+
+      val query = MongoDBObject("_id" -> x.getAs[Long]("_id").get)
+      val update = MongoDBObject(
+        "$set" -> MongoDBObject("cluster" -> x.getAs[Long]("value"))
+      )
+      val result = db("onlyRelevantTweets").update( query, update )
+      println(result)
+
+    }
+    )
+
+  }
   /**
     * retrive the annotations of tweet
     * it will reurn Some(of the list made of Dbpedia Annotations object]
@@ -246,7 +268,7 @@ object DbpediaAnnotationCollection {
     //updateTweetsNotAnnotated()
     //updateTweetsNotAnnotated()
     //insertAnnotazioniRelevants
-    updateTweetsAnnotated()
+    updateRelevantTWeets()
   }
 
 
