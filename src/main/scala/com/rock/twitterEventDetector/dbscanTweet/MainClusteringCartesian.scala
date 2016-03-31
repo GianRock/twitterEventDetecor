@@ -22,11 +22,11 @@ object MainClusteringCartesian extends  App{
   /**
     * dbscan propreties
     */
-  val eps=Try(args(3)).getOrElse("0.25").toFloat
-  val minPts=Try(args(4)).getOrElse("15").toInt
-
-  val minDateString=Try(args(5)).getOrElse("2012-10-10T01:00:20Z")
-  val maxDateString=Try(args(6)).getOrElse("2012-11-07T00:59:46Z")
+  val eps=Try(args(3)).getOrElse("0.35").toFloat
+  val minPts=Try(args(4)).getOrElse("10").toInt
+  val resultPath=Try(args(5)).getOrElse("i")
+  val minDateString=Try(args(6)).getOrElse("2012-10-10T01:00:20Z")
+  val maxDateString=Try(args(7)).getOrElse("2012-11-07T00:59:46Z")
 
 
   /**
@@ -63,7 +63,7 @@ val sc=new SparkContext(conf)
   println("TEMPO CLUSTERING "+timeCluseringex)
 
 
-  clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./results/clusterResultsCartesian/clusterData_eps"+eps+"_minPts"+minPts)
+  clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./results/clusterResultsCartesian/"+resultPath+"/clusterData_eps"+eps+"_minPts"+minPts)
 
 /*s
   if(createLshModel)

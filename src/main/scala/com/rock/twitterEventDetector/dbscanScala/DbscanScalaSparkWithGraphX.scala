@@ -3,6 +3,7 @@ package com.rock.twitterEventDetector.dbscanScala
 import com.rock.twitterEventDetector.model.Similarity
 import org.apache.spark.graphx.{Graph, VertexId, VertexRDD}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{Partition, AccumulableParam, SparkContext}
 
 import scala.collection.{Map, mutable}
@@ -22,7 +23,7 @@ import scala.collection.{Map, mutable}
   *
   *
   */
-class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], executionName:String, minPts: Int =4, eps:Double=1.117 ) extends Serializable {
+class DbscanScalaSparkWithGraphX( minPts: Int =4, eps:Double=1.117 ) extends Serializable {
 
   val NOISE= {
     -2l
@@ -34,7 +35,48 @@ class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], execu
     * @param neighRDD
     * @return
     */
-  def construct(sparkContext: SparkContext,neighRDD:RDD[(Long,Long)])={
+  def constructEdgesFromSimilarities(sparkContext: SparkContext,neighRDD:RDD[(Long,Long)]): RDD[(VertexId, VertexId)] = {
+    val zeroSetElem = collection.mutable.HashSet.empty[Long]
+
+
+
+    val grouped = neighRDD.aggregateByKey(zeroSetElem)(
+      (set, id) => set += id,
+      (set1, set2) => set1 ++ set2).cache(
+    )//.persist(StorageLevel.MEMORY_AND_DISK)
+
+
+
+    val coreObjects = grouped.filter {
+      case (_, set) => set.size >= minPts
+    }.persist(StorageLevel.MEMORY_AND_DISK)
+    val nonCoreObjects = grouped.filter {
+      case (_, set) => set.size < minPts
+    }
+
+    val coreIds = coreObjects.keys.collect().toSet
+    val broadCastIds = sparkContext.broadcast(coreIds)
+
+
+    val coreSxDX: RDD[(VertexId, VertexId)] = coreObjects.flatMap {
+      case (coreId, neighbors) =>
+        val coreNeighbors = neighbors.filter(x => broadCastIds.value.contains(x)).toSeq
+        coreNeighbors.map(x => (coreId, x))
+    }
+    val coreSxnonDX =nonCoreObjects.flatMap{
+      case(nonCoreId,neighbhors)=>
+          val core=neighbhors.toStream.find(x => broadCastIds.value.contains(x))
+          core match {
+            case Some(idCore)=>Some((idCore,nonCoreId))
+            case None=>None
+          }
+    }
+    coreSxDX.union(coreSxnonDX)
+
+
+  }
+
+  def constructMine(sparkContext: SparkContext,neighRDD:RDD[(Long,Long)]): RDD[(VertexId, VertexId)]={
     val zeroSetElem = collection.mutable.HashSet.empty[Long]
 
 
@@ -66,81 +108,23 @@ class DbscanScalaSparkWithGraphX [T <: Distance[T]](data : RDD[(Long, T)], execu
     }.groupByKey().map{x=>(x._2.toList.head,x._1)}
 
 
-    val realNeighs=coreSxDX.union(coreSxnonDX)
-    realNeighs
+    coreSxDX.union(coreSxnonDX)
+
   }
-
-
-  def run(sparkContext: SparkContext): VertexRDD[VertexId] = {
+  def run [T <: Distance[T]](sparkContext: SparkContext,data : RDD[(Long, T)]): VertexRDD[VertexId] = {
 
 
     data.cache()
-
     val neighRDD: RDD[(Long, Long)] = data.cartesian(data)
       .filter {case ((idA,_), (idB,_)) => idA < idB }
       .filter {case ((_,a),(_,b)) => a.distance(b)<= eps}
       .flatMap{case ((idA,_), (idB,_))=> List((idA,idB), (idB, idA))}
 
-    // val group: RDD[(Long, Iterable[Long])] = neighRDD.groupByKey();
-
-    val zeroSetElem = collection.mutable.HashSet.empty[Long]
-
-
-    val coreVertexIds=neighRDD.aggregateByKey(zeroSetElem)(
-      (set, id) => set+=id,
-      (set1, set2) => set1 ++ set2)
-      .filter{
-        case (_, set) => set.size>=minPts
-      }.map(x=>x._1).collect().toSet
-
-
-
-    val broadCastIds=sparkContext.broadcast(coreVertexIds)
-
-   val coreSx=neighRDD.filter{
-     case(ida,idb)=>
-       broadCastIds.value.contains(ida)
-   }
-
-    val coreSxDX=coreSx.filter{
-      case(ida,idb)=>
-        broadCastIds.value.contains(idb)
-    }
-    val coreSxnonDX: RDD[(VertexId, VertexId)] =coreSx.filter{
-      case(ida,idb)=>
-       ! broadCastIds.value.contains(idb)
-    }.map{
-      case(idCore,idNonCore)=>(idNonCore,idCore)
-    }.groupByKey().map{x=>(x._2.toList.head,x._1)}
-
-
-    val realNeighs=coreSxDX.union(coreSxnonDX)
-
-    /*
-    val ris: RDD[(VertexId, VertexId)] =  neighRDD.groupByKey().filter(x=>x._2.size>minPts).flatMap {
-      case (idCore:Long, listNeighbor:Iterable[Long]) => listNeighbor map{ neighbor=>(idCore,neighbor)
-
-      }
-    } */
-
-    /*
-    val ris = coresVertex.flatMap {
-          case (idCore:Long, listNeighbor:Iterable[Long]) =>
-            listNeighbor map{neighbor=>(idCore,neighbor)}
-    }*/
-
-   // coresVertex.coalesce(1).map(_._1).saveAsTextFile("cores")
+    val realNeighs=constructEdgesFromSimilarities(sparkContext,neighRDD)
     val graph: Graph[Int, Int] = Graph.fromEdgeTuples(realNeighs, 1)
     val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices
     connectedComponents
-/*
-    val clusteredData: RDD[(VertexId, T, VertexId)] =
-      data.leftOuterJoin(connectedComponents)
-        .map{
-          case(objectId,(instance,Some(clusterId)))=>(objectId,instance,clusterId)
-          case(objectId,(instance,None))=>(objectId,instance,NOISE)
-        }*/
-   // clusteredData
+
 
   }
 

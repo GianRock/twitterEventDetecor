@@ -3,7 +3,11 @@ package com.rock.twitterEventDetector.dbscanScala
 import java.io.{FileInputStream, ObjectInputStream, ObjectOutputStream, FileOutputStream}
 
 import com.rock.twitterEventDetector.lsh.Hasher
-import org.apache.spark.SparkConf
+import com.rock.twitterEventDetector.lsh.partitioners.BucketPartitioner
+import org.apache.spark.graphx.impl.GraphImpl
+import org.apache.spark.graphx._
+import org.apache.spark.storage.StorageLevel
+import org.apache.spark.{Partitioner, SparkContext, SparkConf}
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.rdd.RDD
 
@@ -15,37 +19,54 @@ import scala.concurrent.Future
   */
 object scalaObj {
   def main(args: Array[String]) {
-    /**
-      * val logFile: String = "target/first100100saasasBoool240/hasher/part-00000"
 
-      * val conf: SparkConf = new SparkConf().setAppName("Simple Application").setMaster("local[16]").set("spark.executor.memory", "1g")
-      * //SparkConf conf = new SparkConf().setAppName("Simple Application");
-      * val sc: JavaSparkContext = new JavaSparkContext(conf)
-      * val lines: RDD[String] = sc.textFile(logFile)
-      * lines.take(10).foreach(println)
-      **/
-/*
-    val c: Vector[Boolean] = (1 to 5000000).map(x => x % 2 == 1).toVector
-    // c.foreach(println)
-    val oos = new ObjectOutputStream(new FileOutputStream("vectorBol22"))
-    oos.writeObject(c)
-    oos.close
-*/
+     val logFile: String = "/home/rocco/couples_dbscan.txt"
 
-    // (3) read the object back in
+      val conf: SparkConf = new SparkConf().setAppName("Simple Application")
+        .setMaster("local[16]")
+        .set("spark.executor.memory", "12g")
+         .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+       val sc=new SparkContext(conf)
+      val lines: RDD[String] = sc.textFile(logFile)
 
-    val ois = new ObjectInputStream(new FileInputStream("vectorBol22"))
-    val obj = ois.readObject().asInstanceOf[Vector[Boolean]]
-    println(obj.size)
-    // obj.foreach(println)
+     val edges: RDD[(Long, Long)] = lines.map { x =>
+        val parts=x.split("\t")
+        ( parts(0).toLong, parts(1).toLong)
+      }.partitionBy(new EdgePartitioner(10) )
+    edges.persist(StorageLevel.MEMORY_AND_DISK)
+     val graph  = Graph.fromEdgeTuples(edges, 1,Some(PartitionStrategy.EdgePartition1D),StorageLevel.MEMORY_AND_DISK_SER,StorageLevel.MEMORY_AND_DISK_SER)
 
-  /* val cas = for(i <- 1 to 1000){
 
-      b<-Future Hasher(Math.pow(2, 19).toInt))
 
-      //(1 to Math.pow(2, 19).toInt).map(x => as.apply(x)).foreach(println)
-    }yield(b)*/
+
+    val conn=  graph.connectedComponents()
+       print(conn.vertices.count())
 
 
   }
+
+
+  /**
+    * Created by rocco on 17/03/16.
+    */
+  class EdgePartitioner(numParts: Int)  extends Partitioner {
+    override def numPartitions: Int = numParts
+
+    override def getPartition(key: Any): Int = {
+      val edge = key.asInstanceOf[Long]
+      (edge %numParts).toInt
+    }
+
+    override def equals(other: Any): Boolean = other match {
+      case dnp: BucketPartitioner =>
+        dnp.numPartitions == numPartitions
+      case _ =>
+        false
+    }
+
+
+
+
+  }
+
 }

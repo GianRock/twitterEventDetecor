@@ -1,6 +1,6 @@
 package com.rock.twitterEventDetector.dbscanScala
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkContext, SparkConf}
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.graphx.{Graph, VertexId, VertexRDD}
 import org.apache.spark.rdd.RDD
@@ -11,11 +11,12 @@ import org.apache.spark.rdd.RDD
 object mainDBSCAN {
 
   def main(args: Array[String]) {
-    val logFile: String = "spiral.txt"
+
+    val logFile: String = "t48.txt"
 
     val conf: SparkConf = new SparkConf().setAppName("Simple Application").setMaster("local[16]").set("spark.executor.memory", "1g")
     //SparkConf conf = new SparkConf().setAppName("Simple Application");
-    val sc: JavaSparkContext = new JavaSparkContext(conf)
+    val sc = new SparkContext(conf)
 
 
 
@@ -36,8 +37,9 @@ object mainDBSCAN {
     )
 
 
-    val dbscan=new DbscanScalaSparkWithGraphX(coordinateRDD,"spiral",4,  0.3)
-    val connectedComponents =dbscan.run(sc);
+    val dbscan=new DbscanScalaSparkWithGraphXAggrawal(20,  0.1)
+    val connectedComponents: RDD[(VertexId,VertexId)]=dbscan.run(sc,coordinateRDD)
+
     val clusteredCoordinates2= coordinateRDD.leftOuterJoin(connectedComponents).map {
       case (id, (coordinate, Some(cluster))) => (id,(coordinate,cluster))
       case (id, (coordinate, None)) =>(id,(coordinate,-1))
@@ -48,7 +50,7 @@ object mainDBSCAN {
     }
 
     clusteredCoordinates.collect().foreach(println)
-    clusteredCoordinates.coalesce(1).saveAsTextFile("spiral")
+    clusteredCoordinates.coalesce(1).saveAsTextFile("t48Mine2Aggrawal")
 
 /*
 5

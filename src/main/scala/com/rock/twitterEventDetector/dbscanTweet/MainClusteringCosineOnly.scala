@@ -35,9 +35,9 @@ object MainClusteringCosineOnly extends  App{
     */
   val eps=Try(args(7)).getOrElse("0.25").toFloat
   val minPts=Try(args(8)).getOrElse("15").toInt
-
-  val minDateString=Try(args(9)).getOrElse("2012-10-10T01:00:20Z")
-  val maxDateString=Try(args(10)).getOrElse("2012-11-07T00:59:46Z")
+  val savePath=Try(args(9)).getOrElse("i")
+  val minDateString=Try(args(10)).getOrElse("2012-10-10T01:00:20Z")
+  val maxDateString=Try(args(11)).getOrElse("2012-11-07T00:59:46Z")
 
 val lshModelTruePath=lshModelPath+"_b"+numBands+"_r"+numRows
 
@@ -85,7 +85,7 @@ val sc=new SparkContext(conf)
 
   val timeCluseringex=endTimeCLustering-startTimeClustering
   println("TEMPO CLUSTERING "+timeCluseringex)
-  clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./results/clusterResults/clusterData_eps"+eps+"_minPts"+minPts+"_b"+numBands+"_r"+numRows)
+  clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./results/clusterResults/"+savePath+"/clusterDataWind_eps"+eps+"_minPts"+minPts+"_b"+numBands+"_r"+numRows)
 
 /*s
   if(createLshModel)

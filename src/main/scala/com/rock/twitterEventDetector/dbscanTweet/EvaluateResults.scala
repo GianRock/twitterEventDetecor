@@ -9,17 +9,10 @@ import org.apache.spark.{SparkContext, SparkConf}
   * Created by rocco on 10/03/16.
   */
 object EvaluateResults {
-  def main(args: Array[String]) {
-    //  val c= (1 to 500000).par.map(x=>if(x%2==0) '1' else '0').toString()
-    //   print(c.par.map(x=>if(x=='0') false else true).toVector)
 
-    val sparkConf = new SparkConf()
-      .setMaster("local[*]")
-      .setAppName("annotations")
-      .set("spark.executor.memory ", "14g")
-      .set("spark.local.dir", "/tmp/spark-temp");
-    val sc = new SparkContext(sparkConf)
-    val rddResults: RDD[String] =sc.textFile("/home/rocco/clusterData_eps0.35_minPts10_b70_r13")
+  def evaluate(sc:SparkContext,part:String): Unit ={
+
+    val rddResults: RDD[String] =sc.textFile("/home/rocco/windowedClusterResults/clusterResultsCartesian/"+part+"/clusterData_eps0.35_minPts10")
 
     println(rddResults.count())
 
@@ -40,7 +33,20 @@ object EvaluateResults {
     trueRes.collect().foreach(println)
 
 
-   myResults.join(trueRes).map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResults/clusterData_eps0.35_minPts10_b70_r13")
+    myResults.join(trueRes).map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResultsWindowedCartesian/"+part+"/clusterData_eps0.35_minPts10_b60_r10")
+  }
+
+  def main(args: Array[String]) {
+    val sparkConf = new SparkConf()
+      .setMaster("local[*]")
+      .setAppName("annotations")
+      .set("spark.executor.memory ", "14g")
+      .set("spark.local.dir", "/tmp/spark-temp");
+    val sc = new SparkContext(sparkConf)
+    //  val c= (1 to 500000).par.map(x=>if(x%2==0) '1' else '0').toString()
+    //   print(c.par.map(x=>if(x=='0') false else true).toVector)
+    (0 to 100).foreach(x=>evaluate(sc,x.toString))
+
 
 
 

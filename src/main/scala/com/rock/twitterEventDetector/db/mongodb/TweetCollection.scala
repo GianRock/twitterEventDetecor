@@ -283,7 +283,8 @@ object TweetCollection {
 
 
 
-    val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCosineOnly 60g  onlyRelevantTweets 20 60 19 ./results/lshM true 0.4 10 "
+    val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCosineOnly 60g  onlyRelevantTweets 13 60 19 ./results/lshM true 0.35 10 "
+   // val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCartesian 60g  onlyRelevantTweets 19 0.35 10 "
 
     val start=DateTime.parse("2012-10-13T03:00:00.000+02:00")
 
@@ -293,7 +294,10 @@ object TweetCollection {
     val to = new DateTime(endTime)
     val itString=dateRangeString(from,to,Period.hours(6),Period.hours(72))
     println("NUMBER OF HOUR "+itString.size)
-    itString.foreach(x=>println(call+" "+x +" >>clusouto.log"))
+    var i=0
+    itString.foreach(x=>{
+      println(call+" "+i +" "+x + " >>clustCosineOnly.log")
+      i=i+1})
   }
 
   def main22(args: Array[String]) {

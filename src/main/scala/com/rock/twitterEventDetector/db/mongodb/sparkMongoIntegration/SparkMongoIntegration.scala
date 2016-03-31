@@ -82,7 +82,7 @@ object SparkMongoIntegration {
     if(query.isDefined)
       mongoConfig.set("mongo.input.query", query.get.toJson)
     mongoConfig.set("mongo.input.split.create_input_splits", "" + createSplits)
-    //mongoConfig.set("mongo.input.split.use_range_queries",""+true)
+    mongoConfig.set("mongo.input.split.use_range_queries",""+true)
     val documents = sc.newAPIHadoopRDD(
       mongoConfig,                // Configuration
       classOf[MongoInputFormat],  // InputFormat

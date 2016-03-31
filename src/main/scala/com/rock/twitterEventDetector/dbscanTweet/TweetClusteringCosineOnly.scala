@@ -245,6 +245,58 @@ object TweetClusteringCosineOnly {
 
 
 
+  /**
+    *
+    * @param sparkContext
+    * @param neighRDD
+    * @return
+    */
+  private def constructEdgesFromSimilarities(sparkContext: SparkContext,minPts:Int,neighRDD:RDD[(Long,Long)]): RDD[(VertexId, VertexId)] = {
+    val zeroSetElem = collection.mutable.HashSet.empty[Long]
+
+
+    /**
+      *
+      * Per ogni id a raggruppo in un insieme gli id degli oggetti nel viciniato di a
+      *
+      */
+    val grouped = neighRDD.aggregateByKey(zeroSetElem)(
+      (set, id) => set += id,
+      (set1, set2) => set1 ++ set2).cache(
+    )//.persist(StorageLevel.MEMORY_AND_DISK)
+
+
+
+    val coreObjects = grouped.filter {
+      case (_, set) => set.size >= minPts
+    }.persist(StorageLevel.MEMORY_AND_DISK)
+
+    val nonCoreObjects = grouped.filter {
+      case (_, set) => set.size < minPts
+    }
+
+    val coreIds = coreObjects.keys.collect().toSet
+    val broadCastIds = sparkContext.broadcast(coreIds)
+
+
+    val coreSxDX: RDD[(VertexId, VertexId)] = coreObjects.flatMap {
+      case (coreId, neighbors) =>
+        val coreNeighbors = neighbors.filter(x => broadCastIds.value.contains(x) && coreId< x).toSeq
+        coreNeighbors.map(x => (coreId, x))
+    }
+
+    val coreSxnonDX =nonCoreObjects.flatMap{
+      case(nonCoreId,neighbhors)=>
+        val core=neighbhors.toStream.find(x => broadCastIds.value.contains(x))
+        core match {
+          case Some(idCore)=>Some((idCore,nonCoreId))
+          case None=>None
+        }
+    }
+    coreSxDX.union(coreSxnonDX)
+
+
+  }
 
 
 
@@ -284,35 +336,15 @@ object TweetClusteringCosineOnly {
         case(_,((id1,v1),(id2,v2)))=> 1d-cosine(v1,v2)<=eps
       }.flatMap{
       case (_,((id1,v1),(id2,v2))) =>List((id1,id2),(id2,id1))
-    }
-      .persist(StorageLevel.MEMORY_AND_DISK)
+    }.distinct().persist(StorageLevel.MEMORY_AND_DISK)
+
+
+
+
+    val filteredneighList=constructEdgesFromSimilarities(sc,minPts,candidatesNeighbors)
 
     //println("DATA COUNT "+data.count())
-    //  println("CANDIDATE LSH NEIGHBORS "+candidatesNeighbors.count())
-    //  println("CANDIDATE LSH NEIGHBORS DISTINCT "+candidatesNeighbors.distinct().count())
 
-    /**
-      * aggrego gli oggetti nello stesso bucket (idbanda-signature)
-      */
-    val zeroSetElem = collection.mutable.HashSet.empty[Long]
-
-
-    candidatesNeighbors.aggregateByKey(zeroSetElem)(
-      (set, id) => set+=id,
-      (set1, set2) => set1 ++ set2)
-      .filter{
-        case (_, set) => set.size>=minPts
-      }
-
-    val filteredneighList =  candidatesNeighbors
-      .aggregateByKey(zeroSetElem)(
-        (set, id) => set+=id,
-        (set1, set2) => set1 ++ set2)
-      .filter{
-        case (_, set) => set.size>=minPts
-      }.flatMap {
-      case (idCore, listNeighbor) => listNeighbor map ( neighbor => (idCore, neighbor))
-    }.persist(StorageLevel.DISK_ONLY)
 
 
     val graph: Graph[Int, Int] = Graph.fromEdgeTuples(filteredneighList, 1,None,StorageLevel.MEMORY_AND_DISK)
