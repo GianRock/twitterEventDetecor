@@ -25,7 +25,7 @@ object Model {
     * @param inLinks
     */
   case class DbpediaResource(val uriDBpedia:String,val inLinks:Set[String])
-    extends Similarity[DbpediaResource]{
+    extends Similarity[DbpediaResource] with Serializable{
     override def calculateSimilarity(that:DbpediaResource)=1.0
   }
 

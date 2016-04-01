@@ -6,8 +6,11 @@ import org.apache.spark.graphx.{Graph, VertexId, VertexRDD}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 
+import scala.collection.Map
+import scala.collection.generic.CanBuildFrom
+import scala.collection.immutable.Iterable
 import scala.collection.mutable
-
+import scala.collection.breakOut
 /**
   * Created by rocco on 23/01/2016.
   * this class expolits GraphX in order to cluster data with DBSCAN.
@@ -25,29 +28,49 @@ import scala.collection.mutable
   */
 class DbscanScalaSparkWithGraphXAggrawal(minPts: Int =4, eps:Double=1.117 ) extends Serializable {
 
-  val NOISE= {
-    -2l
+  /**
+    *
+    * @param coll
+    * @param o
+    * @param cbf
+    * @tparam T
+    * @tparam CC
+    * @return
+    */
+  def mode
+  [T, CC[X] <: Seq[X]](coll: CC[T])
+                      (implicit o: T => Ordered[T], cbf: CanBuildFrom[Nothing, T, CC[T]])
+  : CC[T] = {
+    val grouped = coll.groupBy(x => x).mapValues(_.size).toSeq
+    val max = grouped.map(_._2).max
+    grouped.filter(_._2 == max).map(_._1)(breakOut)
   }
+  val NOISE= {
+    -1l
+  }
+
+
 
   /**
     *
-    * @param nonCoreObjects
-    * @param broadcast
+     *@param borderObjects
+    * @param clusters
     */
-  def assignBorderToCluster(nonCoreObjects: RDD[(VertexId, mutable.HashSet[VertexId])], broadcast: Broadcast[Array[VertexId]]) = {
-    nonCoreObjects.flatMap {
-      case(nonCoreId,nonCoreIdSet)=>
-        val coreOption=nonCoreIdSet.toStream.find(x => broadcast.value.contains(x))
-        coreOption match {
-          case Some(idCore)=>Some((nonCoreId,idCore))
-          case None=>None
-        }
-    }
+  def assignBorderToCluster(borderObjects:  Map[VertexId, mutable.HashSet[VertexId]], clusters: Map[VertexId, VertexId]): collection.Map[VertexId, VertexId] = {
+    borderObjects.map {
+        case(idBorder,neighbors)=>
+          val clustersIDS: mutable.HashSet[VertexId] =neighbors.flatMap(neighborID=>clusters.get(neighborID))
+       //  val modeCluster: mutable.HashSet[VertexId] =mode(clustersIDS)
+        val cluster=  if(clustersIDS.isEmpty)
+            NOISE
+          else
+          mode(clustersIDS.toList).head
+          (idBorder,cluster)
+      }
   }
 
 
-
-  def run [T <: Distance[T]](sparkContext: SparkContext,data : RDD[(Long, T)]): RDD[(VertexId, VertexId)] = {
+  def run [T <: Distance[T]](sparkContext: SparkContext, data : RDD[(Long, T)]): RDD[(VertexId, VertexId)] = {
 
 
     data.cache()
@@ -77,7 +100,9 @@ class DbscanScalaSparkWithGraphXAggrawal(minPts: Int =4, eps:Double=1.117 ) exte
     val coreIds = coreObjects.keys.collect().toSet
     val broadCastIds = sparkContext.broadcast(coreIds)
 
-
+    /**
+      * archi solo fra core-ids
+      */
     val coreSxDX: RDD[(VertexId, VertexId)] = coreObjects.flatMap {
       case (coreId, neighbors) =>
         val coreNeighbors = neighbors.filter(x => broadCastIds.value.contains(x) && coreId<x).toSeq
@@ -85,13 +110,26 @@ class DbscanScalaSparkWithGraphXAggrawal(minPts: Int =4, eps:Double=1.117 ) exte
     }
 
     val graph: Graph[Int, Int] = Graph.fromEdgeTuples(coreSxDX, 1)
+    /*
+
+      contiene è un rdd idogetto-idcluster (che non è altro che l'id più piccolo della componente connessa)
+     */
     val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices
 
-    val clusters: Array[VertexId] = connectedComponents.values.collect()
-    val borderCLustered: RDD[(VertexId, VertexId)] =assignBorderToCluster(nonCoreObjects,sparkContext.broadcast(clusters))
-    connectedComponents.union(borderCLustered)
+    /**
+      *
+      */
+    val clusters = connectedComponents.collect().toMap
+    /**
+      *
+      */
 
-
+   val borderCollected: Map[VertexId, mutable.HashSet[VertexId]] = nonCoreObjects.collect().toMap
+   val clusteredBorder:Map[VertexId, VertexId] = assignBorderToCluster(borderCollected,clusters)
+  //  val borderCLustered: RDD[(VertexId, VertexId)] =None
+   // connectedComponents.union(borderCLustered)
+   val clusteredBorderRDD = sparkContext.makeRDD[(VertexId, VertexId)](clusteredBorder.toList)
+    connectedComponents.union(clusteredBorderRDD)
   }
 
 

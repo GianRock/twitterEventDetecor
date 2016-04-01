@@ -50,7 +50,7 @@ object mainDBSCAN {
     }
 
     clusteredCoordinates.collect().foreach(println)
-    clusteredCoordinates.coalesce(1).saveAsTextFile("t48Mine2Aggrawal")
+    clusteredCoordinates.coalesce(1).saveAsTextFile("t48Mine2NOnDirAgg2")
 
 /*
 5
