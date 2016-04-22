@@ -1,3 +1,4 @@
+
 package com.rock.twitterEventDetector.model
 
 import java.io.Serializable
@@ -6,15 +7,18 @@ import java.util.Date
 import com.mongodb.{BasicDBList, DBObject, BasicDBObject}
 import com.mongodb.casbah.commons.MongoDBObject
 import com.rock.twitterEventDetector.model.AnnotationType.AnnotationType
+import com.rock.twitterEventDetector.model.AnnotationType.AnnotationType
+import com.rock.twitterEventDetector.model.{AnnotationType, Similarity}
 import org.apache.spark.mllib.linalg.SparseVector
 import org.bson.BSONObject
 import com.mongodb.casbah.Imports._
+import Distances._
 
 /**
   * Created by rocco on 01/02/2016.
   */
 object Model {
-
+val WIKIPEDIA_N=4806150 //  11517454
 
 
 
@@ -26,7 +30,7 @@ object Model {
     */
   case class DbpediaResource(val uriDBpedia:String,val inLinks:Set[String])
     extends Similarity[DbpediaResource] with Serializable{
-    override def calculateSimilarity(that:DbpediaResource)=1.0
+    override def calculateSimilarity(that:DbpediaResource)=1d-calculateNormalizedGoogleDistance(this.inLinks,that.inLinks,WIKIPEDIA_N)
   }
 
 

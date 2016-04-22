@@ -5,37 +5,51 @@
 package com.rock.twitterEventDetector.dbscanTweet
 
 import java.util.Date
+import java.util.concurrent.Executors
+import com.mongodb.casbah.MongoConnection
 
+import com.mongodb.BasicDBObject
+ import com.mongodb.casbah.commons.MongoDBObject
+import com.mongodb.casbah.{MongoClientURI, MongoClient}
+import com.rock.twitterEventDetector.configuration.Constant._
 import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
-import com.rock.twitterEventDetector.db.mongodb.{DbpediaAnnotationCollection, TweetCollection}
-import com.rock.twitterEventDetector.dbscanTweet.Distances._
-import com.rock.twitterEventDetector.lsh.{LSHWithData, LSHModelWithData, LSH, LSHModel}
+import com.rock.twitterEventDetector.db.mongodb.{DbpediaCollection, DbpediaAnnotationCollection, TweetCollection}
+ import com.rock.twitterEventDetector.dbscanTweet.Distances._
+ import com.rock.twitterEventDetector.lsh.{LSHWithData, LSHModelWithData, LSH, LSHModel}
+import com.rock.twitterEventDetector.model.Model
 import com.rock.twitterEventDetector.model.Model._
 import com.rock.twitterEventDetector.model.Tweets.{VectorTweet, AnnotatedTweet, AnnotatedTweetWithDbpediaResources, Tweet}
 import com.rock.twitterEventDetector.nlp.DbpediaSpootLightAnnotator
 import com.rock.twitterEventDetector.nlp.indexing.{AnalyzerUtils, MyAnalyzer}
+import com.rock.twitterEventDetector.utils.ProprietiesConfig
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD
 import edu.berkeley.cs.amplab.spark.indexedrdd.IndexedRDD._
-import org.apache.spark.graphx.{Graph, VertexId, VertexRDD}
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.graphx._
 import org.apache.spark.mllib.feature.{HashingTF, IDF, Normalizer}
 import org.apache.spark.mllib.linalg.{SparseVector, Vector}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.{Accumulable, SparkConf, SparkContext}
 import org.apache.spark.mllib.clustering.{KMeans, KMeansModel}
+import scala.Predef
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import com.rock.twitterEventDetector.utils.UtilsFunctions._
+import scala.concurrent.duration.Duration
+import scala.util.{Success, Failure}
 
-import scala.collection.mutable
+import scala.collection.{Map, mutable}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.Failure
 
 /**
   * Created by rocco on 26/01/2016.
   */
 object TweetClusteringCosineOnly {
 
-  val NOISE: VertexId =(-2l)
+  val NOISE: VertexId =(-1l)
 
 
 
@@ -327,8 +341,6 @@ object TweetClusteringCosineOnly {
 
 
 
-
-
     val candidatesNeighbors: RDD[(VertexId, VertexId)] = groupedLSH.flatMapValues{
       case(listCandidateNeighbors:mutable.LinkedList[(VertexId, SparseVector)])=>generateCouplesFromLinkedList(listCandidateNeighbors)
     }
@@ -365,17 +377,159 @@ object TweetClusteringCosineOnly {
 
   }
 
+  /**
+    *
+     * @param uris
+    * @return
+    */
+  def getInLinkFromUris(uris: List[String],client:MongoClient,accumulatorInLinks:scala.collection.mutable.Map[String, Set[Int]]): Set[Int] = {
+              val inLinks: List[Set[Int]] = uris.flatMap{
+                uri=>
+                    val name= uri.substring(28,uri.length)
+                  if(accumulatorInLinks.contains(name))
+                    accumulatorInLinks.get(name)
+                  else{
+                    val optionInLinkSet=DbpediaCollection.findDbpediaResourceInLinks(name,client)
+                    optionInLinkSet match{
+                     case Some(set)=>    accumulatorInLinks.put(name,set)
+                     case None=>accumulatorInLinks.put(name,Set.empty[Int])
+                    }
+                    optionInLinkSet
+                  }
+
+
+               }
+
+              inLinks.foldLeft(Set.empty[Int])((r,c) =>r ++ c)
+
+  }
 
 
 
 
 
 
+  /**
+    * retrive the annotations of tweet
+    * it will reurn Some(of the list made of Dbpedia Annotations object]
+    * None if the tweet isn't altready annotated through dbpedia Spootlight
+    *
+    * @param idTweet
+    * @return
+    */
+  def getUrisDbpediaFromIdtweet(idTweet:Long,client:  MongoClient): Option[List[String]] = {
+
+
+    val collection = client(MONGO_DB_NAME)("annotazioniSpark")
+    val result = collection.findOne(MongoDBObject("_id" -> idTweet))
+    result match {
+      case Some(obj) =>
+
+        val annotations: List[BasicDBObject] = obj.get("value").asInstanceOf[java.util.List[BasicDBObject]].asScala.toList
+        val uris = annotations.map {
+          ann =>
+            ann.getString("uriDBpedia")
+        }.toSet
+
+
+        Some(uris.toList)
+
+
+      case None => None
+    }
+  }
+
+
+  def calculateSemanticSim(id1: VertexId, id2: VertexId, broadcastMapuris: Broadcast[Predef.Map[VertexId, Set[String]]], broadCastInLinks: Broadcast[Predef.Map[String, Set[Int]]]):Double = {
+    val uriAOption=broadcastMapuris.value.get(id1)
+    val uriBOption=broadcastMapuris.value.get(id2)
+    if(uriAOption.isDefined && uriBOption.isDefined){
+        val uriA: Set[String] =uriAOption.get
+        val uriB=uriBOption.get
+        val inLinksA=uriA.flatMap(uri=>broadCastInLinks.value.get(uri)).foldLeft(Set.empty[Int])((r,c)=>r++c)
+        val inLinksB=uriB.flatMap(uri=>broadCastInLinks.value.get(uri)).foldLeft(Set.empty[Int])((r,c)=>r++c)
+        calculateNormalizedGoogleDistanceInt(inLinksA,inLinksB)
+
+    }else 0.0
+  }
+
+  /**
+    *
+    * @param minPts
+    * @param eps
+    */
+  def clusteringTweetsSemantic(sc: SparkContext,
+                       dataToCluster:RDD[(Long,Tweet)],
+                       lshModel: LSHModelWithData,
+                       minPts: Int,
+                       eps: Double) = {
+
+    val ids: Iterator[Predef.Map[VertexId, Set[String]]] =dataToCluster.keys.collect().grouped(1000).map(idTweets=>DbpediaAnnotationCollection.getUrisDbpediaOfTweets(idTweets))
+    val tweetUriDBpedia: Predef.Map[VertexId, Set[String]] =ids.foldLeft(Map.empty[VertexId,Set[String]])((r, c) =>r ++ c)
+
+    val allUriDbpedia=tweetUriDBpedia.values.foldLeft(Set.empty[String])((r, c) =>r ++ c)
+   val uriInLinksIterator= allUriDbpedia.grouped(100).map(urisIterator=>DbpediaCollection.findDbpediaResourceInLinks(urisIterator))
+
+    val uriInLinks: Predef.Map[String, Set[Int]] =uriInLinksIterator.foldLeft(Map.empty[String,Set[Int]])((r, c) =>r ++ c)
+
+    val broadcastMapuris=sc.broadcast(tweetUriDBpedia)
+    val broadCastInLinks=sc.broadcast(uriInLinks)
+    /**
+      * aggrego gli oggetti nello stesso bucket (idbanda-signature)
+      */
+    val zeroElem = collection.mutable.LinkedList.empty[(Long,SparseVector)]
+
+    val groupedLSH: RDD[((Int, String), mutable.LinkedList[(Long, SparseVector)])] =lshModel.hashTables.aggregateByKey(zeroElem)(
+      (list: collection.mutable.LinkedList[(Long,SparseVector)], v:(Long,SparseVector)) => list :+ v ,
+      (list1, list2) => list1 ++ list2)
+
+    groupedLSH.persist(StorageLevel.MEMORY_AND_DISK)
 
 
 
 
+    val candidatesNeighbors: RDD[(VertexId, VertexId)] = groupedLSH.flatMapValues{
+      case(listCandidateNeighbors:mutable.LinkedList[(VertexId, SparseVector)])=>generateCouplesFromLinkedList(listCandidateNeighbors)
+    }
+      .filter{
+        case(_,((id1,v1),(id2,v2)))=>
+          val textSim=cosine(v1,v2)
+          val semanticSim=calculateSemanticSim(id1,id2,broadcastMapuris,broadCastInLinks)
 
+          val sim=(textSim+semanticSim)/2.0
+
+
+          1d-sim<=eps
+      }.flatMap{
+      case (_,((id1,v1),(id2,v2))) =>List((id1,id2),(id2,id1))
+    }.distinct().persist(StorageLevel.MEMORY_AND_DISK)
+
+
+
+
+    val filteredneighList=constructEdgesFromSimilarities(sc,minPts,candidatesNeighbors)
+
+    //println("DATA COUNT "+data.count())
+
+
+
+    val graph: Graph[Int, Int] = Graph.fromEdgeTuples(filteredneighList, 1,None,StorageLevel.MEMORY_AND_DISK)
+    val connectedComponents: VertexRDD[VertexId] = graph.connectedComponents().vertices;
+
+
+    val clusteredData: RDD[(VertexId, VertexId)] =
+      dataToCluster.leftOuterJoin(connectedComponents)
+        .map{
+          case(objectId,(instance,Some(clusterId)))=>(objectId,clusterId)
+          case(objectId,(instance,None))=>(objectId,NOISE)
+        }
+
+
+    clusteredData
+
+
+
+  }
 
   def evaluateLSHModel(lshModel:LSHModel,data: RDD[(VertexId, SparseVector)]): (Double, Double, Double, Double) ={
 

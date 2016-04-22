@@ -1,13 +1,12 @@
 package com.rock.twitterEventDetector.dbscanTweet
 
+import java.io.{File, PrintWriter}
+
 import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
-
-
-
- import com.rock.twitterEventDetector.lsh.{LSHModelWithData, LSHWithData, LSHModel}
+import com.rock.twitterEventDetector.lsh.{LSHModelWithData, LSHWithData}
 import com.rock.twitterEventDetector.model.Tweets.Tweet
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkContext, SparkConf}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.joda.time.DateTime
 
 import scala.util.Try
@@ -15,19 +14,19 @@ import scala.util.Try
 /**
   * Created by rocco on 17/03/16.
   */
-object MainClusteringCosineOnly {
+object MainClusteringCosineSemantic {
 
   def main(args: Array[String]) ={
 
 
 
-    val maxMemory = Try(args(0)).getOrElse("60G")
-    val collectionTweetsName=Try(args(1)).getOrElse("tweets")
+    val maxMemory = Try(args(0)).getOrElse("10G")
+    val collectionTweetsName=Try(args(1)).getOrElse("onlyRelevantTweets")
     /**
       * lsh params numero righe e numero bande
       */
-    val numRows=Try(args(2)).getOrElse("14").toInt
-    val numBands=Try(args(3)).getOrElse("60").toInt
+    val numRows=Try(args(2)).getOrElse("4").toInt
+    val numBands=Try(args(3)).getOrElse("20").toInt
     /**
       * dimensionalità dizionario
       */
@@ -47,7 +46,7 @@ object MainClusteringCosineOnly {
     val minPts=Try(args(8)).getOrElse("15").toInt
     val savePath=Try(args(9)).getOrElse("i")
     val minDateString=Try(args(10)).getOrElse("2012-10-10T01:00:20Z")
-    val maxDateString=Try(args(11)).getOrElse("2012-11-07T00:59:46Z")
+    val maxDateString=Try(args(11)).getOrElse("2012-10-12T01:00:20Z")
 
     val lshModelTruePath=lshModelPath+"_b"+numBands+"_r"+numRows
 
@@ -58,6 +57,7 @@ object MainClusteringCosineOnly {
       .setAppName("LSH")
       .setMaster("local[*]")
       .set("spark.executor.memory ", maxMemory)
+      .set("spark.driver.maxResultSize","2G")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
     conf.registerKryoClasses(Array(classOf[com.rock.twitterEventDetector.lsh.Hasher], classOf[Tweet]))
@@ -90,13 +90,27 @@ object MainClusteringCosineOnly {
 
 
     val startTimeClustering=System.currentTimeMillis()
-    val clusteredData=TweetClusteringCosineOnly.clusteringTweets(sc,tweets,lSHModel,minPts,eps)
+
+    try{
+
+
+    val clusteredData=TweetClusteringCosineOnly.clusteringTweetsSemantic(sc,tweets,lSHModel,minPts,eps)
     val endTimeCLustering=System.currentTimeMillis()
 
-    val timeCluseringex=endTimeCLustering-startTimeClustering
+    val  timeCluseringex=endTimeCLustering-startTimeClustering
     println("TEMPO CLUSTERING "+timeCluseringex)
-    clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./ris/clusterResults/"+savePath+"/clusterDataWind_eps"+eps+"_minPts"+minPts+"_b"+numBands+"_r"+numRows)
+   clusteredData.map(_.productIterator.mkString(",")).coalesce(1).saveAsTextFile("./ris/clusterResults/"+savePath+"/clusterDataWind_eps"+eps+"_minPts"+minPts+"_b"+numBands+"_r"+numRows)
     //lSHModel.save(sc,lshModelTruePath)
+
+    }catch {
+      case ioe: Exception =>
+
+        val pw = new PrintWriter(new File("fileException.txt"))
+        ioe.printStackTrace(pw)
+        pw.close();
+
+
+    }
   }
 
 

@@ -26,7 +26,8 @@ libraryDependencies++=Seq(
   "org.apache.lucene" % "lucene-core" % "5.2.1",
   "org.apache.lucene" % "lucene-analyzers-common" % "5.2.1",
   "org.apache.lucene" % "lucene-queryparser" % "5.2.1",
-  "org.json" % "json" % "20151123"
+  "org.json" % "json" % "20151123",
+  "org.mapdb" % "mapdb" % "1.0.6"
 
 ).map(_.excludeAll(ExclusionRule(organization = "org.mortbay.jetty"))).map(_.excludeAll(ExclusionRule(organization = "javax.servlet")))
 

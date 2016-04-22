@@ -17,7 +17,7 @@ import org.bson.Document
 import org.joda.time.{DateTime, Period}
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 object TweetCollection {
 
   /*s
@@ -283,7 +283,7 @@ object TweetCollection {
 
 
 
-    val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCosineOnly 60g  onlyRelevantTweets 13 60 19 ./results/lshM true 0.35 10 "
+      val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCosineSemantic 60g  onlyRelevantTweets 13 60 19 ./ris/lshM true 0.35 10 "
    // val call="java -Xmx60g -cp provaSpark-assembly-1.0.jar com.rock.twitterEventDetector.dbscanTweet.MainClusteringCartesian 60g  onlyRelevantTweets 19 0.35 10 "
 
     val start=DateTime.parse("2012-10-13T03:00:00.000+02:00")
@@ -369,10 +369,9 @@ object TweetCollection {
     val executorService = Executors.newFixedThreadPool(1000)
     implicit val executionContext = ExecutionContext.fromExecutorService(executorService)
     var i = 1
-  //  val call:String="./bin/spark-submit   --class com.rock.twitterEventDetector.mongoSpark.MainAnnotator   --master local[*]   TwitterEventDetectorSpark-assembly-1.0.jar"
-    //import ExecutionContext.Implicits.global
+  //  val call:String="./bin/spark-submit   --class co import ExecutionContext.Implicits.global
 
-/*
+
     val futures=  iterator.toList.tail.map {
       x =>
         //sprintln(call+" "+x)
@@ -392,11 +391,11 @@ object TweetCollection {
     }
     //val f: Unit =Future.sequence(futures).onSuccess { case i => println(i) }
 
-    for (f <- futures) Await.ready(f, Duration.Inf)
+    for (f <- futures) Await.ready(f, scala.concurrent.duration.Duration.Inf)
 
 
 
-*/
+
 
   }
 

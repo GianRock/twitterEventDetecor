@@ -4,10 +4,10 @@ package com.rock.twitterEventDetector.lsh
   * Created by maytekin on 06.08.2015.
   */
 
-import akka.io.Udp.SO.Broadcast
-import com.rock.twitterEventDetector.lsh.partitioners.{HashFuncPartitioner, BucketPartitioner}
+ import com.rock.twitterEventDetector.lsh.partitioners.{HashFuncPartitioner, BucketPartitioner}
 import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkContext
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.mllib.linalg.SparseVector
 import org.apache.spark.rdd.RDD
 import scala.collection.immutable.{IndexedSeq, BitSet}
@@ -61,9 +61,40 @@ class LSHModelWithData(val m: Int, val numHashFunc : Int, val numHashTables: Int
 
   /** adds a new sparse vector with vector Id: vId to the model. */
   def add (vId: Long, v: SparseVector, sc: SparkContext): LSHModelWithData = {
-    val newRDD = sc.parallelize(hashValue(v).map(a => (a, (vId,v))))
+    val newRDD: RDD[((Int, String), (Long, SparseVector))] = sc.parallelize(hashValue(v).map(a => (a, (vId,v))))
     hashTables ++ newRDD
     this
+  }
+
+  /**
+    *
+    * @param data
+    * @param hashFunctions
+    * @return
+    */
+  private def hashVector(data: SparseVector, hashFunctions: Broadcast[Seq[(Int, Hasher)]]): List[(Int, String)] = {
+    hashFunctions.value.map(a => (a._1 % numHashTables, a._2.hash(data)))
+      .groupBy(_._1)
+      .map(x => (x._1, x._2.map(_._2).mkString(""))).toList
+  }
+
+  /**
+    *
+    * @param sc
+    * @param data
+    * @return
+    */
+  def add(  sc:SparkContext,data:RDD[(Long,SparseVector)]):LSHModelWithData={
+    val broascastHashFunctions: Broadcast[Seq[(Int, Hasher)]] = sc.broadcast(hashFunctions)
+
+    val newhashTables: RDD[((Int, String), (Long,SparseVector))] = data.flatMap {
+      case (id, sparseVector) =>
+        hashVector(sparseVector, broascastHashFunctions).map((_,(id,sparseVector)))
+    }.partitionBy(new BucketPartitioner(numHashTables)).cache()
+    hashTables++newhashTables
+    this
+
+
   }
 
 

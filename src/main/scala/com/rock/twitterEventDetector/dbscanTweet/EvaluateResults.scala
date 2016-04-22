@@ -12,7 +12,7 @@ object EvaluateResults {
 
   def evaluate(sc:SparkContext,part:String): Unit ={
 
-    val rddResults: RDD[String] =sc.textFile("/home/rocco/windowedClusterResults/clusterResultsCartesian/"+part+"/clusterData_eps0.35_minPts10")
+    val rddResults: RDD[String] =sc.textFile("/home/rocco/semanticRIs/clusterResults/"+part+"/clusterDataWind_eps0.35_minPts10_b60_r13")
 
     println(rddResults.count())
 
@@ -26,14 +26,20 @@ object EvaluateResults {
     }//.filter(x=>x._2.equals(-1L)==false)
 
 
-    val d= myResults.map(_.productIterator.mkString("\t")).coalesce(1)//.saveAsTextFile("results/reseps0.3515w")
+   // val d= myResults.map(_.productIterator.mkString("\t")).coalesce(1)//.saveAsTextFile("results/reseps0.3515w")
     rddResults.collect().foreach(println)
-    val  trueRes=SparkMongoIntegration.getRelevantTweets(sc)
-    println("TRUE RES"+trueRes.count())
-    trueRes.collect().foreach(println)
+   val  trueRes: RDD[(Long, Long)] =SparkMongoIntegration.getRelevantTweets(sc)
+    //println("TRUE RES"+trueRes.count())
+    //trueRes.collect().foreach(println)
+
+     //val results2: RDD[(Long, (Long, Option[Long]))] =myResults.leftOuterJoin(trueRes)
+    val joinedResults=myResults.leftOuterJoin(trueRes).mapValues{
+      case(assignedCuster,Some(realCluster))=>(assignedCuster,realCluster)
+      case(assignedCuster,None)=>(assignedCuster,-1)
+    }.map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResultsSemantic/"+part+"/clusterData_eps0.35_minPts10_b60_r10")
 
 
-    myResults.join(trueRes).map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResultsWindowedCartesian/"+part+"/clusterData_eps0.35_minPts10_b60_r10")
+   // myResults.join(trueRes).map(x=>x._1+"\t"+x._2.productIterator.mkString("\t")).coalesce(1).saveAsTextFile("/home/rocco/phytonNotebook/clusterResultsAllTweets/"+part+"/clusterData_eps0.35_minPts10_b60_r10")
   }
 
   def main(args: Array[String]) {
@@ -45,7 +51,7 @@ object EvaluateResults {
     val sc = new SparkContext(sparkConf)
     //  val c= (1 to 500000).par.map(x=>if(x%2==0) '1' else '0').toString()
     //   print(c.par.map(x=>if(x=='0') false else true).toVector)
-    (0 to 100).foreach(x=>evaluate(sc,x.toString))
+    (0 to 13).foreach(x=>evaluate(sc,x.toString))
 
 
 

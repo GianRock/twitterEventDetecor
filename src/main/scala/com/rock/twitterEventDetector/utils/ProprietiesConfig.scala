@@ -32,6 +32,15 @@ object ProprietiesConfig {
 
 
 
+  val stringURI=if(auth){
+
+
+    "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/?authSource="+authdb//+"&connectTimeoutMS=3000000"
+
+  }else{
+    "mongodb://"+host+":27017"
+
+  }
 
   def main(args: Array[String]): Unit = {
 

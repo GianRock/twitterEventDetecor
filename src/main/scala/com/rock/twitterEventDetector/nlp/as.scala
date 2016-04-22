@@ -31,6 +31,12 @@ object as {
       tweets.foreach(println)
 
 
+      val textToAnn="Romney blames Obama for Congress s failure to pass new farm bill congress farmbill romney"
+      val ann=new DbpediaSpootLightAnnotator
+      ann.annotateText(textToAnn)
+
+
+
     }
 
 

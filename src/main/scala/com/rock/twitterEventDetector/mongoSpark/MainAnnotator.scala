@@ -1,5 +1,7 @@
 package com.rock.twitterEventDetector.mongoSpark
 
+import java.util
+
 import com.mongodb.DBObject
 import com.mongodb.casbah.commons.Imports
 import com.rock.twitterEventDetector.db.mongodb.sparkMongoIntegration.SparkMongoIntegration
@@ -80,7 +82,7 @@ object MainAnnotator {
     println(tweets.count())
 
 
-    val annotations=nlpPipeLine(tweets)
+    val annotations: RDD[(VertexId, util.List[Imports.DBObject])] =nlpPipeLine(tweets)
 
     val outputConfig = new Configuration()
     val mongoUri=if(auth){

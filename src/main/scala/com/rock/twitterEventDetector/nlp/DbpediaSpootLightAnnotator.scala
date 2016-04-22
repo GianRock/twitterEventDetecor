@@ -125,9 +125,9 @@ class DbpediaSpootLightAnnotator extends  Serializable{
 
     val typesToAnnotate: String = "&types=DBpedia:Activity,DBpedia:Event,DBpedia:Organisation,DBpedia:Person,DBpedia:Place,DBpedia:Work,DBpedia:Agent,dbpedia-owl:Work"
     val url: String = URL_DB_PEDIA + "?text=" + textEncoded + "&confidence=" + CONFIDENCE + "&support=" + SUPPORT + "&spotter=Default" + typesToAnnotate
-
+  println(url)
     val resp = Try(RestClient.doGet(url, true))
-    //println(resp)
+    println(resp)
     resp match {
       case Failure(ex) =>
         println(ex)

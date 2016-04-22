@@ -12,7 +12,7 @@ object MongoCLientSingleton {
     val stringURI=if(auth){
 
 
-        "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/?authSource="+authdb
+        "mongodb://"+usr+":"+"sparkmongo"+"@"+host+":27017/?authSource="+authdb+"&connectTimeoutMS=3000000"
 
     }else{
         "mongodb://"+host+":27017"
